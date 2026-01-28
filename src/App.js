@@ -18,7 +18,11 @@ import {
   deleteDoc,
   setDoc,
 } from "firebase/firestore";
-import { signInWithEmailAndPassword, signOut } from "firebase/auth";
+import {
+  signInWithEmailAndPassword,
+  signOut,
+  sendPasswordResetEmail
+} from "firebase/auth";
 import "./App.css";
 import PayrollCalculator from "./PayrollCalculator";
 
@@ -345,6 +349,20 @@ const loadLeaderAttendance = async (memberIds) => {
     setAllLeaves([]);
     setAllOvertime([]);
     setUsersMap({});
+  };
+
+  const handlePasswordReset = async () => {
+    if (!email) {
+      notify("Please enter your email first");
+      return;
+    }
+  
+    try {
+      await sendPasswordResetEmail(auth, email);
+      notify("📧 Password reset email sent. Check your inbox.");
+    } catch (err) {
+      notify("❌ " + err.message);
+    }
   };
 
 
@@ -1527,6 +1545,9 @@ const saveMyLeaveEdit = async () => {
             <input type="email" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} required />
             <input type="password" placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)} required />
             <button className="btn submit" type="submit">Login</button>
+            <button type="button"  className="btn"  style={{ marginTop: 10, background: "#eee", color: "#333" }}  onClick={handlePasswordReset}>
+              Forgot Password?
+            </button>
           </form>
         </div>
       </div>
