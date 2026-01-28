@@ -1,0 +1,43 @@
+mutation CreateLeaveRequest($leaveTypeId: UUID!, $startDate: Date!, $endDate: Date!, $reason: String!) @auth(level: USER) {
+  leaveRequest_insert(data: {
+    leaveTypeId: $leaveTypeId,
+    userId_expr: "auth.uid",
+    startDate: $startDate,
+    endDate: $endDate,
+    reason: $reason,
+    status: "pending",
+    createdAt_expr: "request.time"
+  })
+}
+
+query GetLeaveRequestsForUser @auth(level: USER) {
+  leaveRequests(where: {userId: {eq_expr: "auth.uid"}}) {
+    id
+    leaveType {
+      name
+    }
+    startDate
+    endDate
+    status
+    reason
+  }
+}
+
+mutation ClockIn @auth(level: USER) {
+  attendanceRecord_insert(data: {
+    userId_expr: "auth.uid",
+    clockInTime_expr: "request.time"
+  })
+}
+
+mutation ClockOut @auth(level: USER) {
+  attendanceRecord_update(
+    where: {
+      userId: {eq_expr: "auth.uid"},
+      clockOutTime: {isNull: true}
+    }
+    data: {
+      clockOutTime_expr: "request.time"
+    }
+  )
+}

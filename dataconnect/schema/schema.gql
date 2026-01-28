@@ -1,0 +1,47 @@
+type User @table {
+  firstName: String!
+  lastName: String!
+  email: String!
+  employeeId: String!
+  createdAt: Timestamp!
+  department: String
+  position: String
+  manager: User
+}
+
+type AttendanceRecord @table {
+  user: User!
+  clockInTime: Timestamp!
+  clockOutTime: Timestamp
+  notes: String
+}
+
+type LeaveType @table {
+  name: String!
+  createdAt: Timestamp!
+  description: String
+  maxDaysPerYear: Int
+  requiresApproval: Boolean
+}
+
+type LeaveRequest @table {
+  user: User!
+  leaveType: LeaveType!
+  startDate: Date!
+  endDate: Date!
+  reason: String!
+  status: String!
+  createdAt: Timestamp!
+  approver: User
+  approvalDate: Timestamp
+  rejectionReason: String
+}
+
+type LeaveBalance @table(key: ["user", "leaveType"]) {
+  user: User!
+  leaveType: LeaveType!
+  totalDaysEntitled: Float!
+  daysTaken: Float!
+  createdAt: Timestamp!
+  updatedAt: Timestamp!
+}
