@@ -63,6 +63,7 @@ export default function App() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
+  const [showPassword, setShowPassword] = useState(false);
  
   // common UI
   const [message, setMessage] = useState("");
@@ -1547,7 +1548,31 @@ const saveMyLeaveEdit = async () => {
           <h2>Staff Attendance Login</h2>
           <form onSubmit={handleLogin}>
             <input type="email" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} required />
-            <input type="password" placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)} required />
+            <div style={{ position: "relative" }}>
+              <input
+                type={showPassword ? "text" : "password"}
+                placeholder="Password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                required
+             />
+
+              <span
+                onClick={() => setShowPassword(!showPassword)}
+                style={{
+                  position: "absolute",
+                  right: "12px",
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  cursor: "pointer",
+                  userSelect: "none",
+                  fontSize: "16px"
+                }}
+                title={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? "Hide" : "Show"}
+              </span>
+            </div>
             <button className="btn submit" type="submit">Login</button>
             <button type="button"  className="btn"  style={{ marginTop: 10, background: "#eee", color: "#333" }}  onClick={handlePasswordReset}>
               Forgot Password?
