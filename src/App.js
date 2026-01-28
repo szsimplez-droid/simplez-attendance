@@ -1554,8 +1554,6 @@ const saveMyLeaveEdit = async () => {
     );
   }
 
-
-
   return (
     <div className="app-layout">
       {/* --- SLIDE TOGGLE SIDEBAR --- */}
