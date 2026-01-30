@@ -193,7 +193,7 @@ export default function App() {
       designation: emp.designation || "",
       grade: emp.grade || "",
       email: emp.email || "",
-      doe: emp.doe || "",
+      doe: emp.doe || emp.joinDate || "",
       employmentType: emp.employmentType || "",
       probationPeriod: emp.probationPeriod || "",
       dob: emp.dob || "",
@@ -321,6 +321,8 @@ export default function App() {
         doc(db, "users", uid),
         {
           ...employeeForm,
+           joinDate: employeeForm.doe || "",
+          doe: employeeForm.doe || "",
           eid: employeeForm.employeeCode,
           name: employeeForm.employeeName,
           email: loginEmail,
@@ -355,6 +357,8 @@ export default function App() {
   
       await updateDoc(doc(db, "users", selectedEmpId), {
         ...employeeForm,
+         joinDate: employeeForm.doe || "",
+        doe: employeeForm.doe || "",
         eid: employeeForm.employeeCode,
         name: employeeForm.employeeName,
         updatedAt: new Date().toISOString(),
