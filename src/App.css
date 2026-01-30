@@ -164,7 +164,7 @@ h1, h2, h3 {
   border-collapse: collapse;
   margin-bottom: 25px;
   background: white;
-  border-radius: 10px;
+ /*  border-radius: 10px; */
   overflow: hidden;
   box-shadow: 0 2px 6px rgba(0,0,0,0.1);
 }
@@ -900,6 +900,30 @@ div.colheaders{
   max-height: 600px;
   max-width: max-content;
   scrollbar-width: thin;
+}
+
+.modal-backdrop{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 16px;
+}
+
+.modal{
+  width: min(1000px, 96vw);
+  max-height: 90vh;
+  overflow: auto;
+  background: white;
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+}
+@media (max-width: 900px){
+  .modal .form-grid { grid-template-columns: 1fr; }
 }
 
 

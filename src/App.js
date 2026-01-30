@@ -1,13 +1,15 @@
 /* eslint-disable no-unused-vars */
 /* eslint-disable react-hooks/exhaustive-deps */
 // src/App.js
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
 import React, { useState, useEffect, useCallback} from "react";
 import { jsPDF } from "jspdf";
 import {autoTable} from "jspdf-autotable";
 import { getFunctions, httpsCallable } from "firebase/functions";
 
 import { collection, getDocs, onSnapshot,orderBy } from "firebase/firestore";// already imported, just make sure
-import { db, auth } from "./firebase";
+import { app, db, auth } from "./firebase";
 import {
   addDoc,
   query,
@@ -51,6 +53,13 @@ const notify = (text) => {
   setTimeout(() => div.remove(), 3000);
 };
 
+// secondary auth init (OUTSIDE App)
+const secondaryApp =
+  getApps().find((a) => a.name === "secondary") ||
+  initializeApp(app.options, "secondary");
+
+const secondaryAuth = getAuth(secondaryApp);
+
 
 /* ---------------- App ---------------- */
 export default function App() {
@@ -64,6 +73,20 @@ export default function App() {
   const [password, setPassword] = useState("");
 
   const [showPassword, setShowPassword] = useState(false);
+
+  const [newEmpAuthEmail, setNewEmpAuthEmail] = useState("");
+  const [newEmpTempPassword, setNewEmpTempPassword] = useState("");
+
+  const [loginEmail, setLoginEmail] = useState("");
+  const [tempPassword, setTempPassword] = useState("");
+  const [showTempPw, setShowTempPw] = useState(false);
+
+  const [leaderQueryInput, setLeaderQueryInput] = useState("");
+  const [leaderQuery, setLeaderQuery] = useState("");
+  
+  const [showLeaderDropdown, setShowLeaderDropdown] = useState(false);
+
+  const [showEmpModal, setShowEmpModal] = useState(false);
  
   // common UI
   const [message, setMessage] = useState("");
@@ -106,6 +129,306 @@ export default function App() {
   const [allPayslips, setAllPayslips] = useState([]);
   const [allPoReports, setAllPoReports] = useState([]);
 
+  const [empSearch, setEmpSearch] = useState("");
+    const [selectedEmpId, setSelectedEmpId] = useState(null);
+  
+    const leaders = employees.filter(
+    (e) => (e.role === "leader") || (e.roles || []).includes("leader")
+  );
+  
+  
+    const emptyEmployeeForm = {
+      employeeCode: "",
+      employeeName: "",
+      myanmarName: "",
+      gender: "",
+      department: "",
+      designation: "",
+      leaderId: "",
+      grade: "",
+      email: "",
+      doe: "",
+      employmentType: "",
+      probationPeriod: "",
+      dob: "",
+      age: "",
+      nrc: "",
+      phone: "",
+      address: "",
+      contactAddress: "",
+      maritalStatus: "",
+    };
+  
+    const [employeeForm, setEmployeeForm] = useState(emptyEmployeeForm);
+  
+   const filteredEmployees = employees.filter((e) => {
+    const q = empSearch.trim().toLowerCase();
+    if (!q) return true;
+  
+    const hay = [
+      e.eid, e.employeeCode,
+      e.name, e.employeeName,
+      e.email,
+      e.department,
+      e.designation,
+      e.myanmarName,
+      e.phone,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+  
+    return hay.includes(q);
+  });
+  
+  const openEmployeeForEdit = (emp) => {
+    setSelectedEmpId(emp.id);
+  
+    setEmployeeForm({
+      employeeCode: emp.employeeCode || emp.eid || "",
+      employeeName: emp.employeeName || emp.name || "",
+      myanmarName: emp.myanmarName || "",
+      gender: emp.gender || "",
+      department: emp.department || "",
+      designation: emp.designation || "",
+      grade: emp.grade || "",
+      email: emp.email || "",
+      doe: emp.doe || "",
+      employmentType: emp.employmentType || "",
+      probationPeriod: emp.probationPeriod || "",
+      dob: emp.dob || "",
+      age: emp.age || "",
+      nrc: emp.nrc || "",
+      phone: emp.phone || "",
+      address: emp.address || "",
+      contactAddress: emp.contactAddress || "",
+      maritalStatus: emp.maritalStatus || "",
+      leaderId: emp.leaderId || "", 
+    });
+  
+    const leader = employees.find((x) => x.id === emp.leaderId);
+    setLeaderQueryInput(leader?.name || "");  // show leader name
+    setShowLeaderDropdown(false);
+  };
+  
+  const saveEmployeeProfile = async () => {
+    try {
+      if (!employeeForm.employeeCode || !employeeForm.employeeName) {
+        return notify("Employee Code and Employee Name are required.");
+      }
+  
+      const payload = {
+        // keep new HR fields
+        ...employeeForm,
+  
+        // keep your old fields so other screens still work
+        eid: employeeForm.employeeCode,
+        name: employeeForm.employeeName,
+  
+        updatedAt: new Date().toISOString(),
+      };
+  
+      if (selectedEmpId) {
+        // UPDATE existing
+        await updateDoc(doc(db, "users", selectedEmpId), payload);
+        notify("✅ Employee updated");
+      } else {
+        // CREATE new
+        await addDoc(collection(db, "users"), {
+          ...payload,
+          createdAt: new Date().toISOString(),
+        });
+        notify("✅ New employee created");
+      }
+  
+      // refresh list + reset
+      await loadEmployees();
+      setSelectedEmpId(null);
+      setEmployeeForm(emptyEmployeeForm);
+    } catch (err) {
+      console.error(err);
+      notify("❌ Save failed: " + err.message);
+    }
+  };
+  
+  const startNewEmployee = () => {
+    setSelectedEmpId(null);
+    setEmployeeForm(emptyEmployeeForm);
+  };
+  
+  const startCreateEmployee = () => {
+    setSelectedEmpId(null);
+    setEmployeeForm(emptyEmployeeForm);
+  
+    // 🔴 clear auth fields
+    setLoginEmail("");
+    setTempPassword("");
+    setShowTempPw(false);
+  
+    // ✅ clear leader search fields
+    setLeaderQueryInput("");
+    setShowLeaderDropdown(false);
+  };
+  
+  useEffect(() => {
+    if (activeSidebar === "admin-employee-form") {
+      startCreateEmployee();
+    }
+  }, [activeSidebar]);
+  
+  const openCreateEmployeeModal = () => {
+    startCreateEmployee();
+    setShowEmpModal(true);
+  };
+  const openEditEmployeeModal = (emp) => {
+    openEmployeeForEdit(emp);     // loads data into form + sets selectedEmpId
+    setShowEmpModal(true);
+  };
+  
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setLeaderQuery(leaderQueryInput.trim());
+    }, 300); // ⏱ debounce time (ms)
+  
+    return () => clearTimeout(t);
+  }, [leaderQueryInput]);
+  
+  const employeeById = React.useMemo(() => {
+    const map = {};
+    employees.forEach((e) => (map[e.id] = e));
+    return map;
+  }, [employees]);
+  
+  
+  const createEmployee = async () => {
+    try {
+      if (!loginEmail || !tempPassword) {
+        return notify("Login email and temporary password are required.");
+      }
+      if (!employeeForm.employeeCode || !employeeForm.employeeName) {
+        return notify("Employee Code and Employee Name are required.");
+      }
+  
+      const cred = await createUserWithEmailAndPassword(
+        secondaryAuth,
+        loginEmail,
+        tempPassword
+      );
+  
+      const uid = cred.user.uid;
+  
+      await setDoc(
+        doc(db, "users", uid),
+        {
+          ...employeeForm,
+          eid: employeeForm.employeeCode,
+          name: employeeForm.employeeName,
+          email: loginEmail,
+          role: employeeForm.role || "staff",
+          roles: employeeForm.roles || [employeeForm.role || "staff"],
+          createdAt: new Date().toISOString(),
+          createdBy: auth.currentUser?.uid || null,
+          authUid: uid,
+        },
+        { merge: true }
+      );
+  
+      await secondaryAuth.signOut();
+  
+      notify("✅ Employee created (UID: " + uid + ")");
+      setEmployeeForm(emptyEmployeeForm);
+      setSelectedEmpId(null);
+      setLoginEmail("");
+      setTempPassword("");
+      setShowTempPw(false);
+      loadEmployees();
+      
+    } catch (err) {
+      console.error(err);
+      notify("❌ Create failed: " + (err?.message || "unknown error"));
+    }
+  };
+  
+  const updateEmployee = async () => {
+    try {
+      if (!selectedEmpId) return;
+  
+      await updateDoc(doc(db, "users", selectedEmpId), {
+        ...employeeForm,
+        eid: employeeForm.employeeCode,
+        name: employeeForm.employeeName,
+        updatedAt: new Date().toISOString(),
+        updatedBy: auth.currentUser?.uid || null,
+        leaderId: employeeForm.leaderId || "",
+      });
+  
+      notify("✅ Employee updated");
+      setEmployeeForm(emptyEmployeeForm);
+      setSelectedEmpId(null);
+      loadEmployees();
+    } catch (err) {
+      console.error(err);
+      notify("❌ Update failed: " + (err?.message || "unknown error"));
+    }
+  };
+  
+  
+  const createEmployeeSecondaryAuth = async () => {
+    try {
+      if (!newEmpAuthEmail || !newEmpTempPassword) {
+        return notify("Email and temporary password are required.");
+      }
+      if (!employeeForm.employeeCode || !employeeForm.employeeName) {
+        return notify("Employee Code and Employee Name are required.");
+      }
+  
+      // 1) Create Auth user (UID generated automatically)
+      const cred = await createUserWithEmailAndPassword(
+        secondaryAuth,
+        newEmpAuthEmail,
+        newEmpTempPassword
+      );
+  
+      const uid = cred.user.uid;
+  
+      // 2) Save Firestore profile to users/{uid} (fits your UID-based code)
+      const payload = {
+        ...employeeForm,
+  
+        // keep compatibility with your existing UI (uses eid/name)
+        eid: employeeForm.employeeCode,
+        name: employeeForm.employeeName,
+        email: newEmpAuthEmail,
+  
+        role: employeeForm.role || "staff",
+        roles: employeeForm.roles || [employeeForm.role || "staff"],
+  
+        leaderId: employeeForm.leaderId || "",
+  
+        createdAt: new Date().toISOString(),
+        createdBy: auth.currentUser?.uid || null,
+        authUid: uid,
+      };
+  
+      await setDoc(doc(db, "users", uid), payload, { merge: true });
+  
+      // 3) Sign out ONLY secondary auth (admin stays logged in)
+      await secondaryAuth.signOut();
+  
+      notify("✅ Employee created (UID: " + uid + ")");
+  
+      // reset
+      setNewEmpAuthEmail("");
+      setNewEmpTempPassword("");
+      setEmployeeForm(emptyEmployeeForm);
+  
+      // refresh list
+      loadEmployees();
+    } catch (err) {
+      console.error("createEmployeeSecondaryAuth error:", err);
+      notify("❌ Create failed: " + (err?.message || "unknown error"));
+    }
+  };
  
   //12/18
  const functions = getFunctions();
@@ -651,34 +974,7 @@ const sendPayslip = async (p) => {
   }, [role]);
 
 
-  const updateEmployee = async () => {
-  if (!editingEmp || !editingEmp.id) return notify("No employee selected.");
-
-  const payload = stripUndefined({
-    eid:editingEmp.eid ?? "",
-    name: editingEmp.name ?? "",
-    email: editingEmp.email ?? "",
-    role: editingEmp.role ?? "staff",
-    team: editingEmp.team ?? "",                 // ✅ never undefined
-    position: editingEmp.position ?? "",
-    languageLevel: editingEmp.languageLevel ?? "",
-    joinDate: editingEmp.joinDate ?? "",
-    leaderId: editingEmp.leaderId ?? "",         // optional
-    roles: editingEmp.roles,                     // keep if you use array roles
-    updatedAt: new Date().toISOString(),
-  });
-
-  await updateDoc(doc(db, "users", editingEmp.id), payload);
-
-  notify("✅ Employee updated successfully");
-  setEditingEmp(null);
-  loadEmployees();
-  loadAllUsers();
-};
-
-
-  
-  const loadAttendance = async (uid) => {
+    const loadAttendance = async (uid) => {
     const q = query(collection(db, "attendance"), where("userId", "==", uid));
     const snap = await getDocs(q);
 
@@ -1628,6 +1924,7 @@ const saveMyLeaveEdit = async () => {
       <>
         <hr />
         <div className="sidebar-section-title">Admin Management</div>
+        <button className="nav-item" onClick={() => { setActiveSidebar("admin-employee-form"); setSidebarOpen(false); }}><span className="icon">🧾</span> Employee Form</button>
         <button  className="nav-item" onClick={() => {setActiveSidebar("admin-employee");setSidebarOpen(false);}}><span className="icon">👥</span> Employee List</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-att");setSidebarOpen(false);}}><span className="icon">📊</span> All Attendance</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-leave");setSidebarOpen(false);}}><span className="icon">📄</span>All Leave Requests</button>
@@ -2172,6 +2469,330 @@ const saveMyLeaveEdit = async () => {
  
            
       {/* Admin Employee Management */}
+      {isAdmin && activeSidebar === "admin-employee-form" && (
+    <section className="card">
+    <h2>Employee Information</h2>
+
+    {/* Search + actions */}
+    <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
+      <input
+        type="text"
+        placeholder="Search by code, name, email, department..."
+        value={empSearch}
+        onChange={(e) => setEmpSearch(e.target.value)}
+        style={{ flex: 1 }}
+      />
+      <button className="btn" onClick={() => setEmpSearch("")}>Clear</button>
+      <button className="btn blue" onClick={openCreateEmployeeModal}>+ New Employee</button>
+
+    </div>
+
+    {/* Employee list (click row to edit) */}
+    <div className="table-scroll">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Name</th>
+            <th>Dept</th>
+            <th>Designation</th>
+            <th>Email</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filteredEmployees.length === 0 ? (
+            <tr><td colSpan="5">No employees found</td></tr>
+          ) : (
+            filteredEmployees.map((e) => (
+              <tr
+                key={e.id}
+                onClick={() => openEmployeeForEdit(e)}
+                style={{
+                  cursor: "pointer",
+                  background: selectedEmpId === e.id ? "#eef6ff" : "transparent",
+                }}
+              >
+                <td>{e.employeeCode || e.eid || "-"}</td>
+                <td>{e.employeeName || e.name || "-"}</td>
+                <td>{e.department || "-"}</td>
+                <td>{e.designation || "-"}</td>
+                <td>{e.email || "-"}</td>
+                <td>
+                 <button className="btn small" onClick={() => openEditEmployeeModal(e)}>
+                  ✏ Edit
+                </button>
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+
+      {/* Form */}
+    {showEmpModal && (
+  <div className="modal-backdrop" onClick={() => setShowEmpModal(false)}>
+    <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h2 style={{ margin: 0 }}>
+          {selectedEmpId ? "Edit Employee" : "Create New Employee"}
+        </h2>
+        <button className="btn" onClick={() => setShowEmpModal(false)}>✖</button>
+      </div>
+
+      {/* ---- YOUR FORM START ---- */}
+      <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <input
+          placeholder="Employee Code"
+          value={employeeForm.employeeCode}
+          onChange={(e) => setEmployeeForm({ ...employeeForm, employeeCode: e.target.value })}
+        />
+        <input
+          placeholder="Employee Name"
+          value={employeeForm.employeeName}
+          onChange={(e) => setEmployeeForm({ ...employeeForm, employeeName: e.target.value })}
+        />
+
+        <input
+          placeholder="Myanmar Name"
+          value={employeeForm.myanmarName}
+          onChange={(e) => setEmployeeForm({ ...employeeForm, myanmarName: e.target.value })}
+        />
+        <select
+          value={employeeForm.gender}
+          onChange={(e) => setEmployeeForm({ ...employeeForm, gender: e.target.value })}
+        >
+          <option value="">Gender</option>
+          <option value="Male">Male</option>
+          <option value="Female">Female</option>
+        </select>
+
+        <input
+          placeholder="Department"
+          value={employeeForm.department}
+          onChange={(e) => setEmployeeForm({ ...employeeForm, department: e.target.value })}
+        />
+        <input
+          placeholder="Designation"
+          value={employeeForm.designation}
+          onChange={(e) => setEmployeeForm({ ...employeeForm, designation: e.target.value })}
+        />
+
+        <input
+          placeholder="Grade"
+          value={employeeForm.grade}
+          onChange={(e) => setEmployeeForm({ ...employeeForm, grade: e.target.value })}
+        />
+
+        {/* For edit mode, show Firestore email (profile) */}
+        <input
+          placeholder="Email"
+          value={employeeForm.email}
+          onChange={(e) => setEmployeeForm({ ...employeeForm, email: e.target.value })}
+        />
+
+        <div>
+          <label style={{ fontSize: 12 }}>DOE</label>
+          <input
+            type="date"
+            value={employeeForm.doe}
+            onChange={(e) => setEmployeeForm({ ...employeeForm, doe: e.target.value })}
+          />
+        </div>
+
+        <div>
+          <label style={{ fontSize: 12 }}>DOB</label>
+          <input
+            type="date"
+            value={employeeForm.dob}
+            onChange={(e) => setEmployeeForm({ ...employeeForm, dob: e.target.value })}
+          />
+        </div>
+
+        <input
+          placeholder="Employment Type"
+          value={employeeForm.employmentType}
+          onChange={(e) => setEmployeeForm({ ...employeeForm, employmentType: e.target.value })}
+        />
+
+        <input
+          placeholder="Probation Period"
+          value={employeeForm.probationPeriod}
+          onChange={(e) => setEmployeeForm({ ...employeeForm, probationPeriod: e.target.value })}
+        />
+
+        <input
+          placeholder="Age"
+          value={employeeForm.age}
+          onChange={(e) => setEmployeeForm({ ...employeeForm, age: e.target.value })}
+        />
+
+        <input
+          placeholder="NRC"
+          value={employeeForm.nrc}
+          onChange={(e) => setEmployeeForm({ ...employeeForm, nrc: e.target.value })}
+        />
+        <input
+          placeholder="Phone"
+          value={employeeForm.phone}
+          onChange={(e) => setEmployeeForm({ ...employeeForm, phone: e.target.value })}
+        />
+
+        <input
+          placeholder="Address"
+          value={employeeForm.address}
+          onChange={(e) => setEmployeeForm({ ...employeeForm, address: e.target.value })}
+        />
+        <input
+          placeholder="Contact Address"
+          value={employeeForm.contactAddress}
+          onChange={(e) => setEmployeeForm({ ...employeeForm, contactAddress: e.target.value })}
+        />
+
+        <select
+          value={employeeForm.maritalStatus}
+          onChange={(e) => setEmployeeForm({ ...employeeForm, maritalStatus: e.target.value })}
+        >
+          <option value="">Marital Status</option>
+          <option value="Single">Single</option>
+          <option value="Married">Married</option>
+          <option value="Divorced">Divorced</option>
+          <option value="Widowed">Widowed</option>
+        </select>
+        
+        
+        {/* ✅ Only show LOGIN EMAIL + TEMP PASSWORD when creating */}
+        {!selectedEmpId && (
+          <>
+           <label style={{ marginBottom: "10px" }}>Login Email </label>
+            <input
+              type="email"
+              placeholder="Login Email"
+              value={loginEmail}
+              onChange={(e) => setLoginEmail(e.target.value)}
+              autoComplete="off"
+              name="new-login-email"
+            />
+
+            <label style={{ marginBottom: "10px" }}>Temporary Password </label>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                style={{ flex: 1 }}
+                type={showTempPw ? "text" : "password"}
+                placeholder="Temporary Password"
+                value={tempPassword}
+                onChange={(e) => setTempPassword(e.target.value)}
+                autoComplete="new-password"
+                name="new-temp-password"
+              />
+              <button type="button" className="btn small" onClick={() => setShowTempPw(v => !v)}>
+                {showTempPw ? "Hide" : "Show"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div>
+      <label style={{ marginBottom: "10px" }}>Type leader name... </label>
+      <input
+      placeholder="Type leader name..."
+      value={leaderQueryInput}
+      autoComplete="off"
+      onChange={(e) => {
+        setLeaderQueryInput(e.target.value);
+        setShowLeaderDropdown(true);
+      }}
+      onFocus={() => setShowLeaderDropdown(true)}
+    />
+
+    {employeeForm.leaderId && (
+  <div style={{ marginTop: 6, fontSize: 13, color: "#333" }}>
+    Current leader: <b>{employeeById[employeeForm.leaderId]?.name || "Unknown"}</b>
+  </div>
+)}
+
+  {/* show dropdown based on INPUT, not leaderQuery */}
+   {showLeaderDropdown && leaderQueryInput.trim() && (
+    <div
+      style={{
+        position: "absolute",
+        top: "100%",
+        left: 0,
+        right: 0,
+        background: "#fff",
+        border: "1px solid #ddd",
+        borderRadius: 8,
+        maxHeight: 200,
+        overflowY: "auto",
+        zIndex: 9999,
+        boxShadow: "0 8px 20px rgba(0,0,0,0.15)",
+        marginTop: 4,
+      }}
+    >
+      {leaders
+        .filter((l) => {
+          const q = leaderQueryInput.trim().toLowerCase();
+          return (l.name || "").toLowerCase().includes(q);
+        })
+        .slice(0, 20)
+        .map((l) => (
+          <div
+            key={l.id}
+            style={{
+              padding: "8px 10px",
+              cursor: "pointer",
+              borderBottom: "1px solid #f1f1f1",
+            }}
+            onClick={() => {
+              setEmployeeForm({ ...employeeForm, leaderId: l.id });
+              setLeaderQueryInput(l.name || "");
+              // ✅ close dropdown
+              setShowLeaderDropdown(false);
+            }}
+          >
+            <div style={{ fontWeight: 500 }}>{l.name}</div>
+            <div style={{ fontSize: 12, color: "#666" }}>{l.email}</div>
+          </div>
+        ))}
+    </div>
+  )}
+</div>
+
+     <div style={{ display: "flex", gap: 10, marginTop: 16, justifyContent: "flex-end" }}>
+        <button
+          className="btn blue"
+          onClick={async () => {
+            if (selectedEmpId) await updateEmployee();
+            else await createEmployee();
+
+            // close modal after save
+            setShowEmpModal(false);
+          }}
+        >
+          💾 Save
+        </button>
+
+        <button
+          className="btn red"
+          onClick={() => {
+            startCreateEmployee();
+            setShowEmpModal(false);
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+      {/* ---- YOUR FORM END ---- */}
+    </div>
+  </div>
+)}
+
+  
+  </section>
+)}
+
   {isAdmin && activeSidebar === "admin-employee" && (
   <section className="card">
     <h2>Employee Management</h2>
