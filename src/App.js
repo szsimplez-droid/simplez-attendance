@@ -1436,7 +1436,7 @@ const leaderUpdateAttendanceTime = async () => {
   }, [activeSidebar]);
 
   
-  const summaryLeaveTypes = ["Casual Leave", "Annual Leave", "Medical Leave","Unpaid Leave", "Maternity Leave",];
+  const summaryLeaveTypes = ["Casual Leave", "Annual Leave", "Medical Leave","WithoutPay Leave", "Maternity Leave",];
   const saveLeaveBalance = async (uid) => {
     const data = leaveBalances[uid];
     if (!data) return;
@@ -1648,7 +1648,7 @@ const LEAVE_TYPES = [
   { key: "Annual Leave", label: "Annual", hasCarry: true },
   { key: "Casual Leave", label: "Casual", hasCarry: false },
   { key: "Medical Leave", label: "Medical", hasCarry: false },
-  { key: "Unpaid Leave", label: "Unpaid", hasCarry: false },
+  { key: "WithoutPay Leave", label: "WithoutPay", hasCarry: false },
   { key: "Maternity Leave", label: "Maternity", hasCarry: false },
 ];
 
@@ -2197,7 +2197,7 @@ const getLeaveTaken = (uid, leaveName, year = currentYear) => {
             <select value={leaveName} onChange={(e) => setLeaveName(e.target.value)}>
               <option>Casual Leave</option>
               <option>Annual Leave</option>
-              <option>Unpaid Leave</option>
+              <option>WithoutPay Leave</option>
               <option>Medical Leave</option>
               <option>Maternity Leave</option>
             </select>
@@ -2285,7 +2285,7 @@ const getLeaveTaken = (uid, leaveName, year = currentYear) => {
                       <option>Casual Leave</option>
                       <option>Annual Leave</option>
                       <option>Medical Leave</option>
-                      <option>Unpaid Leave</option>
+                      <option>WithoutPay Leave</option>
                     </select>
                    
                     </div>
@@ -3389,7 +3389,7 @@ const getLeaveTaken = (uid, leaveName, year = currentYear) => {
                       <option>Casual Leave</option>
                       <option>Annual Leave</option>
                       <option>Medical Leave</option>
-                      <option>Unpaid Leave</option>
+                      <option>WithoutPay Leave</option>
                     </select>
                    
                     </div>
@@ -3596,7 +3596,7 @@ const getLeaveTaken = (uid, leaveName, year = currentYear) => {
                     "Casual Leave": 6,
                     "Annual Leave": 10,
                     "Medical Leave": 90,
-                    "Unpaid Leave": 10,
+                    "WithoutPay Leave": 10,
                     "Maternity Leave": 98,
                   };
 
@@ -3656,7 +3656,7 @@ const getLeaveTaken = (uid, leaveName, year = currentYear) => {
                     "Casual Leave": 6,
                     "Annual Leave": 10,
                     "Medical Leave": 90,
-                    "Unpaid Leave": 10,
+                    "WithoutPay Leave": 10,
                     "Maternity Leave": 98,
                   };
 
