@@ -8,8 +8,10 @@ import { jsPDF } from "jspdf";
 import {autoTable} from "jspdf-autotable";
 import { getFunctions, httpsCallable } from "firebase/functions";
 
+
 import { collection, getDocs, onSnapshot,orderBy } from "firebase/firestore";// already imported, just make sure
 import { app, db, auth } from "./firebase";
+
 import {
   addDoc,
   query,
@@ -53,13 +55,13 @@ const notify = (text) => {
   setTimeout(() => div.remove(), 3000);
 };
 
+
 // secondary auth init (OUTSIDE App)
 const secondaryApp =
   getApps().find((a) => a.name === "secondary") ||
   initializeApp(app.options, "secondary");
 
 const secondaryAuth = getAuth(secondaryApp);
-
 
 /* ---------------- App ---------------- */
 export default function App() {
@@ -83,12 +85,12 @@ export default function App() {
 
   const [leaderQueryInput, setLeaderQueryInput] = useState("");
   const [leaderQuery, setLeaderQuery] = useState("");
-  
+ 
   const [showLeaderDropdown, setShowLeaderDropdown] = useState(false);
 
   const [showEmpModal, setShowEmpModal] = useState(false);
- 
-  // common UI
+
+   // common UI
   const [message, setMessage] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeSidebar, setActiveSidebar] = useState("my-panel");
@@ -129,311 +131,315 @@ export default function App() {
   const [allPayslips, setAllPayslips] = useState([]);
   const [allPoReports, setAllPoReports] = useState([]);
 
+
   const [empSearch, setEmpSearch] = useState("");
-    const [selectedEmpId, setSelectedEmpId] = useState(null);
-  
-    const leaders = employees.filter(
-    (e) => (e.role === "leader") || (e.roles || []).includes("leader")
-  );
-  
-  
-    const emptyEmployeeForm = {
-      employeeCode: "",
-      employeeName: "",
-      myanmarName: "",
-      gender: "",
-      department: "",
-      designation: "",
-      leaderId: "",
-      grade: "",
-      email: "",
-      doe: "",
-      employmentType: "",
-      probationPeriod: "",
-      dob: "",
-      age: "",
-      nrc: "",
-      phone: "",
-      address: "",
-      contactAddress: "",
-      maritalStatus: "",
-    };
-  
-    const [employeeForm, setEmployeeForm] = useState(emptyEmployeeForm);
-  
-   const filteredEmployees = employees.filter((e) => {
-    const q = empSearch.trim().toLowerCase();
-    if (!q) return true;
-  
-    const hay = [
-      e.eid, e.employeeCode,
-      e.name, e.employeeName,
-      e.email,
-      e.department,
-      e.designation,
-      e.myanmarName,
-      e.phone,
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-  
-    return hay.includes(q);
+  const [selectedEmpId, setSelectedEmpId] = useState(null);
+
+  const leaders = employees.filter(
+  (e) => (e.role === "leader") || (e.roles || []).includes("leader")
+);
+
+
+  const emptyEmployeeForm = {
+    employeeCode: "",
+    employeeName: "",
+    myanmarName: "",
+    gender: "",
+    department: "",
+    designation: "",
+    leaderId: "",
+    grade: "",
+    email: "",
+    doe: "",
+    employmentType: "",
+    probationPeriod: "",
+    dob: "",
+    age: "",
+    nrc: "",
+    phone: "",
+    address: "",
+    contactAddress: "",
+    maritalStatus: "",
+  };
+
+  const [employeeForm, setEmployeeForm] = useState(emptyEmployeeForm);
+
+ const filteredEmployees = employees.filter((e) => {
+  const q = empSearch.trim().toLowerCase();
+  if (!q) return true;
+
+  const hay = [
+    e.eid, e.employeeCode,
+    e.name, e.employeeName,
+    e.email,
+    e.department,
+    e.designation,
+    e.myanmarName,
+    e.phone,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return hay.includes(q);
+});
+
+const openEmployeeForEdit = (emp) => {
+  setSelectedEmpId(emp.id);
+
+  setEmployeeForm({
+    employeeCode: emp.employeeCode || emp.eid || "",
+    employeeName: emp.employeeName || emp.name || "",
+    myanmarName: emp.myanmarName || "",
+    gender: emp.gender || "",
+    department: emp.department || "",
+    designation: emp.designation || "",
+    grade: emp.grade || "",
+    email: emp.email || "",
+    doe: emp.doe || emp.joinDate || "",
+    employmentType: emp.employmentType || "",
+    probationPeriod: emp.probationPeriod || "",
+    dob: emp.dob || "",
+    age: emp.age || "",
+    nrc: emp.nrc || "",
+    phone: emp.phone || "",
+    address: emp.address || "",
+    contactAddress: emp.contactAddress || "",
+    maritalStatus: emp.maritalStatus || "",
+    leaderId: emp.leaderId || "", 
+
   });
-  
-  const openEmployeeForEdit = (emp) => {
-    setSelectedEmpId(emp.id);
-  
-    setEmployeeForm({
-      employeeCode: emp.employeeCode || emp.eid || "",
-      employeeName: emp.employeeName || emp.name || "",
-      myanmarName: emp.myanmarName || "",
-      gender: emp.gender || "",
-      department: emp.department || "",
-      designation: emp.designation || "",
-      grade: emp.grade || "",
-      email: emp.email || "",
-      doe: emp.doe || emp.joinDate || "",
-      employmentType: emp.employmentType || "",
-      probationPeriod: emp.probationPeriod || "",
-      dob: emp.dob || "",
-      age: emp.age || "",
-      nrc: emp.nrc || "",
-      phone: emp.phone || "",
-      address: emp.address || "",
-      contactAddress: emp.contactAddress || "",
-      maritalStatus: emp.maritalStatus || "",
-      leaderId: emp.leaderId || "", 
-    });
-  
-    const leader = employees.find((x) => x.id === emp.leaderId);
-    setLeaderQueryInput(leader?.name || "");  // show leader name
-    setShowLeaderDropdown(false);
-  };
-  
-  const saveEmployeeProfile = async () => {
-    try {
-      if (!employeeForm.employeeCode || !employeeForm.employeeName) {
-        return notify("Employee Code and Employee Name are required.");
-      }
-  
-      const payload = {
-        // keep new HR fields
-        ...employeeForm,
-  
-        // keep your old fields so other screens still work
-        eid: employeeForm.employeeCode,
-        name: employeeForm.employeeName,
-  
-        updatedAt: new Date().toISOString(),
-      };
-  
-      if (selectedEmpId) {
-        // UPDATE existing
-        await updateDoc(doc(db, "users", selectedEmpId), payload);
-        notify("✅ Employee updated");
-      } else {
-        // CREATE new
-        await addDoc(collection(db, "users"), {
-          ...payload,
-          createdAt: new Date().toISOString(),
-        });
-        notify("✅ New employee created");
-      }
-  
-      // refresh list + reset
-      await loadEmployees();
-      setSelectedEmpId(null);
-      setEmployeeForm(emptyEmployeeForm);
-    } catch (err) {
-      console.error(err);
-      notify("❌ Save failed: " + err.message);
+
+  const leader = employees.find((x) => x.id === emp.leaderId);
+  setLeaderQueryInput(leader?.name || "");  // show leader name
+  setShowLeaderDropdown(false);
+};
+
+const saveEmployeeProfile = async () => {
+  try {
+    if (!employeeForm.employeeCode || !employeeForm.employeeName) {
+      return notify("Employee Code and Employee Name are required.");
     }
-  };
-  
-  const startNewEmployee = () => {
+
+    const payload = {
+      // keep new HR fields
+      ...employeeForm,
+
+      // keep your old fields so other screens still work
+      eid: employeeForm.employeeCode,
+      name: employeeForm.employeeName,
+
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (selectedEmpId) {
+      // UPDATE existing
+      await updateDoc(doc(db, "users", selectedEmpId), payload);
+      notify("✅ Employee updated");
+    } else {
+      // CREATE new
+      await addDoc(collection(db, "users"), {
+        ...payload,
+        createdAt: new Date().toISOString(),
+      });
+      notify("✅ New employee created");
+    }
+
+    // refresh list + reset
+    await loadEmployees();
     setSelectedEmpId(null);
     setEmployeeForm(emptyEmployeeForm);
-  };
-  
-  const startCreateEmployee = () => {
-    setSelectedEmpId(null);
-    setEmployeeForm(emptyEmployeeForm);
-  
-    // 🔴 clear auth fields
-    setLoginEmail("");
-    setTempPassword("");
-    setShowTempPw(false);
-  
-    // ✅ clear leader search fields
-    setLeaderQueryInput("");
-    setShowLeaderDropdown(false);
-  };
-  
-  useEffect(() => {
-    if (activeSidebar === "admin-employee-form") {
-      startCreateEmployee();
-    }
-  }, [activeSidebar]);
-  
-  const openCreateEmployeeModal = () => {
+  } catch (err) {
+    console.error(err);
+    notify("❌ Save failed: " + err.message);
+  }
+};
+
+const startNewEmployee = () => {
+  setSelectedEmpId(null);
+  setEmployeeForm(emptyEmployeeForm);
+};
+
+const startCreateEmployee = () => {
+  setSelectedEmpId(null);
+  setEmployeeForm(emptyEmployeeForm);
+
+  // 🔴 clear auth fields
+  setLoginEmail("");
+  setTempPassword("");
+  setShowTempPw(false);
+
+  // ✅ clear leader search fields
+  setLeaderQueryInput("");
+  setShowLeaderDropdown(false);
+};
+
+useEffect(() => {
+  if (activeSidebar === "admin-employee-form") {
     startCreateEmployee();
-    setShowEmpModal(true);
-  };
-  const openEditEmployeeModal = (emp) => {
-    openEmployeeForEdit(emp);     // loads data into form + sets selectedEmpId
-    setShowEmpModal(true);
-  };
-  
-  useEffect(() => {
-    const t = setTimeout(() => {
-      setLeaderQuery(leaderQueryInput.trim());
-    }, 300); // ⏱ debounce time (ms)
-  
-    return () => clearTimeout(t);
-  }, [leaderQueryInput]);
-  
-  const employeeById = React.useMemo(() => {
-    const map = {};
-    employees.forEach((e) => (map[e.id] = e));
-    return map;
-  }, [employees]);
-  
-  
-  const createEmployee = async () => {
-    try {
-      if (!loginEmail || !tempPassword) {
-        return notify("Login email and temporary password are required.");
-      }
-      if (!employeeForm.employeeCode || !employeeForm.employeeName) {
-        return notify("Employee Code and Employee Name are required.");
-      }
-  
-      const cred = await createUserWithEmailAndPassword(
-        secondaryAuth,
-        loginEmail,
-        tempPassword
-      );
-  
-      const uid = cred.user.uid;
-  
-      await setDoc(
-        doc(db, "users", uid),
-        {
-          ...employeeForm,
-           joinDate: employeeForm.doe || "",
-          doe: employeeForm.doe || "",
-          eid: employeeForm.employeeCode,
-          name: employeeForm.employeeName,
-          email: loginEmail,
-          role: employeeForm.role || "staff",
-          roles: employeeForm.roles || [employeeForm.role || "staff"],
-          createdAt: new Date().toISOString(),
-          createdBy: auth.currentUser?.uid || null,
-          authUid: uid,
-        },
-        { merge: true }
-      );
-  
-      await secondaryAuth.signOut();
-  
-      notify("✅ Employee created (UID: " + uid + ")");
-      setEmployeeForm(emptyEmployeeForm);
-      setSelectedEmpId(null);
-      setLoginEmail("");
-      setTempPassword("");
-      setShowTempPw(false);
-      loadEmployees();
-      
-    } catch (err) {
-      console.error(err);
-      notify("❌ Create failed: " + (err?.message || "unknown error"));
+  }
+}, [activeSidebar]);
+
+const openCreateEmployeeModal = () => {
+  startCreateEmployee();
+  setShowEmpModal(true);
+};
+const openEditEmployeeModal = (emp) => {
+  openEmployeeForEdit(emp);     // loads data into form + sets selectedEmpId
+  setShowEmpModal(true);
+};
+
+useEffect(() => {
+  const t = setTimeout(() => {
+    setLeaderQuery(leaderQueryInput.trim());
+  }, 300); // ⏱ debounce time (ms)
+
+  return () => clearTimeout(t);
+}, [leaderQueryInput]);
+
+const employeeById = React.useMemo(() => {
+  const map = {};
+  employees.forEach((e) => (map[e.id] = e));
+  return map;
+}, [employees]);
+
+
+const createEmployee = async () => {
+  try {
+    if (!loginEmail || !tempPassword) {
+      return notify("Login email and temporary password are required.");
     }
-  };
-  
-  const updateEmployee = async () => {
-    try {
-      if (!selectedEmpId) return;
-  
-      await updateDoc(doc(db, "users", selectedEmpId), {
+    if (!employeeForm.employeeCode || !employeeForm.employeeName) {
+      return notify("Employee Code and Employee Name are required.");
+    }
+
+    const cred = await createUserWithEmailAndPassword(
+      secondaryAuth,
+      loginEmail,
+      tempPassword
+    );
+
+    const uid = cred.user.uid;
+
+    await setDoc(
+      doc(db, "users", uid),
+      {
         ...employeeForm,
-         joinDate: employeeForm.doe || "",
+        joinDate: employeeForm.doe || "",
         doe: employeeForm.doe || "",
         eid: employeeForm.employeeCode,
         name: employeeForm.employeeName,
-        updatedAt: new Date().toISOString(),
-        updatedBy: auth.currentUser?.uid || null,
-        leaderId: employeeForm.leaderId || "",
-      });
-  
-      notify("✅ Employee updated");
-      setEmployeeForm(emptyEmployeeForm);
-      setSelectedEmpId(null);
-      loadEmployees();
-    } catch (err) {
-      console.error(err);
-      notify("❌ Update failed: " + (err?.message || "unknown error"));
-    }
-  };
-  
-  
-  const createEmployeeSecondaryAuth = async () => {
-    try {
-      if (!newEmpAuthEmail || !newEmpTempPassword) {
-        return notify("Email and temporary password are required.");
-      }
-      if (!employeeForm.employeeCode || !employeeForm.employeeName) {
-        return notify("Employee Code and Employee Name are required.");
-      }
-  
-      // 1) Create Auth user (UID generated automatically)
-      const cred = await createUserWithEmailAndPassword(
-        secondaryAuth,
-        newEmpAuthEmail,
-        newEmpTempPassword
-      );
-  
-      const uid = cred.user.uid;
-  
-      // 2) Save Firestore profile to users/{uid} (fits your UID-based code)
-      const payload = {
-        ...employeeForm,
-  
-        // keep compatibility with your existing UI (uses eid/name)
-        eid: employeeForm.employeeCode,
-        name: employeeForm.employeeName,
-        email: newEmpAuthEmail,
-  
+        email: loginEmail,
         role: employeeForm.role || "staff",
         roles: employeeForm.roles || [employeeForm.role || "staff"],
-  
-        leaderId: employeeForm.leaderId || "",
-  
         createdAt: new Date().toISOString(),
         createdBy: auth.currentUser?.uid || null,
         authUid: uid,
-      };
-  
-      await setDoc(doc(db, "users", uid), payload, { merge: true });
-  
-      // 3) Sign out ONLY secondary auth (admin stays logged in)
-      await secondaryAuth.signOut();
-  
-      notify("✅ Employee created (UID: " + uid + ")");
-  
-      // reset
-      setNewEmpAuthEmail("");
-      setNewEmpTempPassword("");
-      setEmployeeForm(emptyEmployeeForm);
-  
-      // refresh list
-      loadEmployees();
-    } catch (err) {
-      console.error("createEmployeeSecondaryAuth error:", err);
-      notify("❌ Create failed: " + (err?.message || "unknown error"));
+      },
+      { merge: true }
+    );
+
+    await secondaryAuth.signOut();
+
+    notify("✅ Employee created (UID: " + uid + ")");
+    setEmployeeForm(emptyEmployeeForm);
+    setSelectedEmpId(null);
+    setLoginEmail("");
+    setTempPassword("");
+    setShowTempPw(false);
+    loadEmployees();
+    
+  } catch (err) {
+    console.error(err);
+    notify("❌ Create failed: " + (err?.message || "unknown error"));
+  }
+};
+
+const updateEmployee = async () => {
+  try {
+    if (!selectedEmpId) return;
+
+    await updateDoc(doc(db, "users", selectedEmpId), {
+      ...employeeForm,
+      joinDate: employeeForm.doe || "",
+      doe: employeeForm.doe || "",
+      eid: employeeForm.employeeCode,
+      name: employeeForm.employeeName,
+      updatedAt: new Date().toISOString(),
+      updatedBy: auth.currentUser?.uid || null,
+      leaderId: employeeForm.leaderId || "",
+    });
+
+    notify("✅ Employee updated");
+    setEmployeeForm(emptyEmployeeForm);
+    setSelectedEmpId(null);
+    loadEmployees();
+  } catch (err) {
+    console.error(err);
+    notify("❌ Update failed: " + (err?.message || "unknown error"));
+  }
+};
+
+
+const createEmployeeSecondaryAuth = async () => {
+  try {
+    if (!newEmpAuthEmail || !newEmpTempPassword) {
+      return notify("Email and temporary password are required.");
     }
-  };
- 
+    if (!employeeForm.employeeCode || !employeeForm.employeeName) {
+      return notify("Employee Code and Employee Name are required.");
+    }
+
+    // 1) Create Auth user (UID generated automatically)
+    const cred = await createUserWithEmailAndPassword(
+      secondaryAuth,
+      newEmpAuthEmail,
+      newEmpTempPassword
+    );
+
+    const uid = cred.user.uid;
+
+    // 2) Save Firestore profile to users/{uid} (fits your UID-based code)
+    const payload = {
+      ...employeeForm,
+
+      // keep compatibility with your existing UI (uses eid/name)
+      eid: employeeForm.employeeCode,
+      name: employeeForm.employeeName,
+      email: newEmpAuthEmail,
+
+      role: employeeForm.role || "staff",
+      roles: employeeForm.roles || [employeeForm.role || "staff"],
+
+      leaderId: employeeForm.leaderId || "",
+
+      createdAt: new Date().toISOString(),
+      createdBy: auth.currentUser?.uid || null,
+      authUid: uid,
+    };
+
+    await setDoc(doc(db, "users", uid), payload, { merge: true });
+
+    // 3) Sign out ONLY secondary auth (admin stays logged in)
+    await secondaryAuth.signOut();
+
+    notify("✅ Employee created (UID: " + uid + ")");
+
+    // reset
+    setNewEmpAuthEmail("");
+    setNewEmpTempPassword("");
+    setEmployeeForm(emptyEmployeeForm);
+
+    // refresh list
+    loadEmployees();
+  } catch (err) {
+    console.error("createEmployeeSecondaryAuth error:", err);
+    notify("❌ Create failed: " + (err?.message || "unknown error"));
+  }
+};
+
+
+
   //12/18
  const functions = getFunctions();
  
@@ -444,6 +450,69 @@ export default function App() {
 
   const displayUser = (uid) =>
   usersMap[uid]?.name || usersMap[uid]?.email || uid;
+
+  const displayEmpId = (uid) => usersMap[uid]?.eid || "-";
+
+  // Leave pages search
+  const [leaveSearch, setLeaveSearch] = useState("");
+
+ const filteredUserIdsForLeave = Object.keys(usersMap)
+  .filter((uid) => {
+    const q = leaveSearch.trim().toLowerCase();
+    if (!q) return true;
+
+    const u = usersMap[uid] || {};
+    return (
+      (u.eid || "").toLowerCase().includes(q) ||
+      (u.name || "").toLowerCase().includes(q) ||
+      (u.email || "").toLowerCase().includes(q)
+    );
+  })
+  .sort((a, b) => {
+    const eidA = (usersMap[a]?.eid || "").toLowerCase();
+    const eidB = (usersMap[b]?.eid || "").toLowerCase();
+
+    // Put users without eid at bottom
+    if (!eidA && !eidB) return 0;
+    if (!eidA) return 1;
+    if (!eidB) return -1;
+
+    return eidA.localeCompare(eidB, undefined, { numeric: true });
+  });
+
+
+  /* for emplyee management search */
+  const [employeeSearch, setEmployeeSearch] = useState("");
+
+  const filteredEmployeeslocation = employees
+  .filter((emp) => {
+    const q = employeeSearch.trim().toLowerCase();
+    if (!q) return true;
+
+    return (
+      (emp.eid || "").toLowerCase().includes(q) ||
+      (emp.name || "").toLowerCase().includes(q) ||
+      (emp.email || "").toLowerCase().includes(q) ||
+      (emp.team || "").toLowerCase().includes(q) ||
+      (emp.position || "").toLowerCase().includes(q) ||
+      (emp.languageLevel || "").toLowerCase().includes(q) ||
+      (emp.myanmarName || "").toLowerCase().includes(q)
+    );
+  })
+  .sort((a, b) => {
+    const eidA = (a.eid || "").toLowerCase();
+    const eidB = (b.eid || "").toLowerCase();
+
+    if (!eidA && !eidB) return 0;
+    if (!eidA) return 1;
+    if (!eidB) return -1;
+
+    return eidA.localeCompare(eidB, undefined, { numeric: true });
+  });
+
+
+
+
 
   const chunk = (arr, size) => {
   const out = [];
@@ -977,8 +1046,7 @@ const sendPayslip = async (p) => {
     if (isAdmin) loadEmployees();
   }, [role]);
 
-
-    const loadAttendance = async (uid) => {
+  const loadAttendance = async (uid) => {
     const q = query(collection(db, "attendance"), where("userId", "==", uid));
     const snap = await getDocs(q);
 
@@ -1383,6 +1451,7 @@ const leaderUpdateAttendanceTime = async () => {
       },
       { merge: true }
     );
+    await loadLeaveBalances();  // reload whole map
 
     notify("✅ Leave balance saved");
   };
@@ -1574,6 +1643,61 @@ const saveMyLeaveEdit = async () => {
     notify("❌ Update failed: " + err.message);
   }
 };
+
+const LEAVE_TYPES = [
+  { key: "Annual Leave", label: "Annual", hasCarry: true },
+  { key: "Casual Leave", label: "Casual", hasCarry: false },
+  { key: "Medical Leave", label: "Medical", hasCarry: false },
+  { key: "Unpaid Leave", label: "Unpaid", hasCarry: false },
+  { key: "Maternity Leave", label: "Maternity", hasCarry: false },
+];
+
+// --- Leave Taken helpers (for Leave Balance Management) ---
+
+const isSameYear = (dateStr, year) => {
+  if (!dateStr) return false;
+  return String(dateStr).slice(0, 4) === String(year);
+};
+
+const daysInclusive = (startStr, endStr) => {
+  if (!startStr || !endStr) return 0;
+  const s = new Date(startStr);
+  const e = new Date(endStr);
+  const diff = Math.floor((e - s) / (1000 * 60 * 60 * 24));
+  return diff >= 0 ? diff + 1 : 0;
+};
+
+// return total days taken for a user + leaveName in currentYear
+const getLeaveTaken = (uid, leaveName, year = currentYear) => {
+  if (!uid) return 0;
+
+  // allLeaves is loaded for admin; fallback safe
+  const list = (allLeaves || []).filter((l) => {
+    if (l.status !== "approved") return false;
+    if (l.userId !== uid) return false;
+
+    // leaveName in your leave requests looks like "Annual Leave", "Casual Leave", etc.
+    if ((l.leaveName || "") !== leaveName) return false;
+
+    // include if leave is in this year (simple rule)
+    // (if you want cross-year ranges later, we can improve)
+    return isSameYear(l.startDate, year) || isSameYear(l.endDate, year);
+  });
+
+  return list.reduce((sum, l) => {
+    const d = daysInclusive(l.startDate, l.endDate);
+    const type = l.leaveType || "Full Day";
+
+    // Simple rule:
+    // - Morning Half / Evening Half = 0.5 day (only really valid when start=end)
+    // - Full Day = inclusive days
+    if ((type === "Morning Half" || type === "Evening Half") && l.startDate === l.endDate) {
+      return sum + 0.5;
+    }
+    return sum + d;
+  }, 0);
+};
+
 
 
 
@@ -1873,6 +1997,8 @@ const saveMyLeaveEdit = async () => {
                 {showPassword ? "Hide" : "Show"}
               </span>
             </div>
+
+           {/*  <input type="password" placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)} required /> */}
             <button className="btn submit" type="submit">Login</button>
             <button type="button"  className="btn"  style={{ marginTop: 10, background: "#eee", color: "#333" }}  onClick={handlePasswordReset}>
               Forgot Password?
@@ -2190,33 +2316,8 @@ const saveMyLeaveEdit = async () => {
                   <th>Balance</th>
                 </tr>
               </thead>
-              <tbody>
-            {/*     {[
-                  { name: "Casual Leave", allowance: 6 },
-                  { name: "Annual Leave", allowance: 10 },
-                  { name: "Medical Leave", allowance: 90 },
-                  { name: "Unpaid Leave", allowance: 10 },
-                ].map((type, i) => {
-                  const taken = leaves
-                    .filter((lv) => lv.leaveName === type.name && lv.status === "approved")
-                    .reduce((acc, lv) => {
-                      const start = new Date(lv.startDate);
-                      const end = new Date(lv.endDate);
-                      const days =
-                        (end - start) / (1000 * 60 * 60 * 24) + 1; // include both start & end days
-                      return acc + (days > 0 ? days : 0);
-                    }, 0);
-                  const balance = type.allowance - taken;
-                  return (
-                    <tr key={i}>
-                      <td>{type.name}</td>
-                      <td>{type.allowance}</td>
-                      <td>{taken}</td>
-                      <td>{balance < 0 ? 0 : balance}</td>
-                    </tr>
-                  );
-                })} */}
-
+             {/*  <tbody>
+           
                   {summaryLeaveTypes.map((leaveName, i) => {
                   const base = leaveBalances?.[user.uid]?.balances?.[leaveName]?.base ?? 0;
                   const carry = leaveBalances?.[user.uid]?.balances?.[leaveName]?.carry ?? 0;
@@ -2243,7 +2344,38 @@ const saveMyLeaveEdit = async () => {
                   );
                   })}
 
-              </tbody>
+              </tbody> */}
+              <tbody>
+              {summaryLeaveTypes.map((leaveName, i) => {
+                const base =
+                  leaveBalances?.[user.uid]?.balances?.[leaveName]?.base ?? 0;
+
+                // Carry only for Annual Leave
+                const carry =
+                  leaveName === "Annual Leave"
+                    ? (leaveBalances?.[user.uid]?.balances?.[leaveName]?.carry ?? 0)
+                    : 0;
+
+                const allowance = Number(base) + Number(carry);
+
+                // ✅ Taken is now manual/admin-controlled (from leaveBalances)
+                const taken =
+                  Number(leaveBalances?.[user.uid]?.balances?.[leaveName]?.taken ?? 0);
+
+                // ✅ Balance based on admin taken
+                const balance = Math.max(0, allowance - taken);
+
+                return (
+                  <tr key={i}>
+                    <td>{leaveName}</td>
+                    <td>{allowance}</td>
+                    <td>{taken}</td>
+                    <td>{balance}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+
             </table>
 
             
@@ -2318,7 +2450,7 @@ const saveMyLeaveEdit = async () => {
       )}
 
       {/* LEADER SECTION */}
-{isLeader  && activeSidebar === "leader-panel" && (
+    {isLeader  && activeSidebar === "leader-panel" && (
    <section className="card">
   <div className="section admin">
     <h2>Leader Dashboard</h2>
@@ -2496,7 +2628,7 @@ const saveMyLeaveEdit = async () => {
       <table className="data-table">
         <thead>
           <tr>
-            <th>Code</th>
+            <th>ID</th>
             <th>Name</th>
             <th>Dept</th>
             <th>Designation</th>
@@ -2797,28 +2929,44 @@ const saveMyLeaveEdit = async () => {
   </section>
 )}
 
+
   {isAdmin && activeSidebar === "admin-employee" && (
   <section className="card">
     <h2>Employee Management</h2>
 
+    <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
+      <input
+        type="text"
+        placeholder="Search by ID, name, email, department..."
+        value={employeeSearch}
+        onChange={(e) => setEmployeeSearch(e.target.value)}
+        style={{ flex: 1 }}
+      />
+      <button className="btn small" onClick={() => setEmployeeSearch("")}>
+        Clear
+      </button>
+    </div>
+
+
       <table className="data-table">
       <thead>
         <tr>
-          <th>Emplyee ID</th>
+          <th>ID</th>
           <th>Name</th>
           <th>Email</th>
           <th>Role</th>
           <th>Team</th>
           <th>Position</th>
-          <th>Language</th>
-          <th>Join Date</th>
+          <th>JLPT</th>
+          {/* <th>Join Date</th> */}
           <th>Locations</th>
           <th>Action</th>
         </tr>
       </thead>
 
       <tbody>
-        {employees.map((emp) => (
+       {filteredEmployeeslocation.map((emp) => (
+
           <React.Fragment key={emp.id}>
             {/* MAIN ROW */}
             <tr>
@@ -2829,7 +2977,7 @@ const saveMyLeaveEdit = async () => {
               <td>{emp.team}</td>
               <td>{emp.position}</td>
               <td>{emp.languageLevel}</td>
-              <td>{emp.joinDate}</td>
+              {/* <td>{emp.joinDate}</td> */}
               <td>
                 <div>
                   {emp.locations?.[0]?.name || "—"}
@@ -3267,191 +3415,162 @@ const saveMyLeaveEdit = async () => {
 
          {/* ---- Admin: all staff leave balance edit ---- */}
         {isAdmin && activeSidebar === "admin-leave-balance" && (
-        <section className="card">
-          <h2>Leave Balance Management ({currentYear})</h2>
+            <section className="card">
+        <h2>Leave Balance Management ({currentYear})</h2>
 
-          <div class="colheaders">
-          <table>
+        {/* Search */}
+        <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+          <input
+            value={leaveSearch}
+            onChange={(e) => setLeaveSearch(e.target.value)}
+            placeholder="Search by Employee ID, name, email..."
+            style={{ flex: 1 }}
+          />
+          <button className="btn small" onClick={() => setLeaveSearch("")}>Clear</button>
+        </div>
+
+        <div style={{ overflowX: "auto" }}>
+          <table className="data-table" style={{ minWidth: 900 }}>
             <thead>
-            <tr>
-              <th>User</th>
-              <th>Annual  <div style={{ display: "flex", gap: 8, alignItems: "center" }}><span>Base</span> <span> Carry </span> <span>Total</span></div></th>
-              <th>Casual <div style={{ display: "flex", gap: 8, alignItems: "center" }}><span>Base</span> <span> Carry </span> <span>Total</span></div></th>
-              <th>Medical<div style={{ display: "flex", gap: 8, alignItems: "center" }}><span>Base</span> <span> Carry </span> <span>Total</span></div></th>
-              <th>Unpaid<div style={{ display: "flex", gap: 8, alignItems: "center" }}><span>Base</span> <span> Carry </span> <span>Total</span></div></th>
-              <th>Maternity<div style={{ display: "flex", gap: 8, alignItems: "center" }}><span>Base</span> <span> Carry </span> <span>Total</span></div></th>
-              <th>Action</th>
-            </tr>
+              <tr>
+                <th style={{ width: 120 }}>Employee ID</th>
+                <th style={{ width: 260 }}>Name</th>
+                <th>Leave Balance</th>
+                <th style={{ width: 120 }}>Action</th>
+              </tr>
             </thead>
 
             <tbody>
-           
-            {Object.keys(usersMap).map((uid) => {
-              const aBase = getBal(uid, "Annual Leave", "base");
-              const aCarry = getBal(uid, "Annual Leave", "carry");
-              const aTotal = Number(aBase) + Number(aCarry);
-
-              const cBase = getBal(uid, "Casual Leave", "base");
-              const cCarry = getBal(uid, "Casual Leave", "carry");
-              const cTotal = Number(cBase) + Number(cCarry);
-
-              const sBase = getBal(uid, "Medical Leave", "base");
-              const sCarry = getBal(uid, "Medical Leave", "carry");
-              const sTotal = Number(sBase) + Number(sCarry);
-
-              const upBase = getBal(uid, "Unpaid Leave", "base");
-              const upCarry = getBal(uid, "Unpaid Leave", "carry");
-              const upTotal = Number(upBase) + Number(upCarry);
-
-              const mBase = getBal(uid, "Maternity Leave", "base");
-              const mCarry = getBal(uid, "Maternity Leave", "carry");
-              const mTotal = Number(mBase) + Number(mCarry);
-
-              
-
-              const setValue = (type, field, value) => {
-                setLeaveBalances((prev) => ({
-                  ...prev,
-                  [uid]: {
-                    ...(prev[uid] || {}),
-                    balances: {
-                      ...(prev[uid]?.balances || {}),
-                      [type]: {
-                        ...(prev[uid]?.balances?.[type] || {}),
-                        [field]: Number(value),
+              {filteredUserIdsForLeave.map((uid) => {
+                // keep your setValue logic (same as your current code)
+                const setValue = (type, field, value) => {
+                  setLeaveBalances((prev) => ({
+                    ...prev,
+                    [uid]: {
+                      ...(prev[uid] || {}),
+                      balances: {
+                        ...(prev[uid]?.balances || {}),
+                        [type]: {
+                          ...(prev[uid]?.balances?.[type] || {}),
+                          [field]: Number(value),
+                        },
                       },
                     },
-                  },
-                }));
-              };
+                  }));
+                };
 
-              return (
-                <tr key={uid}>
-                  <td style={{ fontWeight: 600 }}>{displayUser(uid)}</td>
+                return (
+                  <tr key={uid}>
+                    <td style={{ fontWeight: 700 }}>
+                      {usersMap[uid]?.eid || "-"}
+                    </td>
 
-                  {/* Annual */}
-                  <td>
-                    <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
-                      <input
-                        type="number"
-                        value={aBase}
-                        onChange={(e) => setValue("Annual Leave", "base", e.target.value)}
-                        style={{ width: 30 }}
-                        title="Annual Base"
-                      />
-                      <input
-                        type="number"
-                        value={aCarry}
-                        onChange={(e) => setValue("Annual Leave", "carry", e.target.value)}
-                        style={{ width: 30 }}
-                        title="Annual Carry"
-                      />
-                      <span style={{ minWidth: 30, textAlign: "right" }}>{aTotal}</span>
-                    </div>
-                  </td>
+                    <td>
+                      <div style={{ fontWeight: 700 }}>{displayUser(uid)}</div>
+                      <div style={{ fontSize: 12, color: "#666" }}>
+                        {usersMap[uid]?.email || ""}
+                      </div>
+                    </td>
 
-                  {/* Casual */}
-                  <td>
-                    <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
-                      <input
-                        type="number"
-                        value={cBase}
-                        onChange={(e) => setValue("Casual Leave", "base", e.target.value)}
-                        style={{ width: 30 }}
-                        title="Casual Base"
-                      />
-                      <input
-                        type="number"
-                        value={cCarry}
-                        onChange={(e) => setValue("Casual Leave", "carry", e.target.value)}
-                        style={{ width: 30 }}
-                        title="Casual Carry"
-                      />
-                      <span style={{ minWidth: 30, textAlign: "right" }}>{cTotal}</span>
-                    </div>
-                  </td>
+                    {/* Leave list (your sketch) */}
+                    <td>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                        {LEAVE_TYPES.map((t) => {
+                          const base = getBal(uid, t.key, "base");
+                          const carry = t.hasCarry ? getBal(uid, t.key, "carry") : 0;
+                          const allowance = Number(base) + Number(carry);
 
-                  {/* Mdedical */}
-                  <td>
-                    <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
-                      <input
-                        type="number"
-                        value={sBase}
-                        onChange={(e) => setValue("Medical Leave", "base", e.target.value)}
-                        style={{ width: 30 }}
-                        title="Medical Base"
-                      />
-                      <input
-                        type="number"
-                        value={sCarry}
-                        onChange={(e) => setValue("Medical Leave", "carry", e.target.value)}
-                        style={{ width: 30 }}
-                        title="Medical Carry"
-                      />
-                      <span style={{ minWidth: 30, textAlign: "right" }}>{sTotal}</span>
-                    </div>
-                  </td>
+                          // manual taken stored in leaveBalances
+                          const manualTaken = getBal(uid, t.key, "taken");
 
-                  {/* Unpaid */}
-                  <td>
-                    <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
-                      <input
-                        type="number"
-                        value={upBase}
-                        onChange={(e) => setValue("Unpaid Leave", "base", e.target.value)}
-                        style={{ width: 30 }}
-                        title="Unpaid Base"
-                      />
-                      <input
-                        type="number"
-                        value={upCarry}
-                        onChange={(e) => setValue("Unpaid Leave", "carry", e.target.value)}
-                        style={{ width: 30 }}
-                        title="Unpaid Carry"
-                      />
-                      <span style={{ minWidth: 30, textAlign: "right" }}>{upTotal}</span>
-                    </div>
-                  </td>
+                          // if manual taken is empty/null, fallback to computed taken from leave requests
+                          const computedTaken = getLeaveTaken(uid, t.key);
+                          const taken = (manualTaken !== "" && manualTaken !== null && manualTaken !== undefined)
+                            ? Number(manualTaken)
+                            : Number(computedTaken);
 
-                   {/* Maternity */}
-                  <td>
-                    <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
-                      <input
-                        type="number"
-                        value={mBase}
-                        onChange={(e) => setValue("Maternity Leave", "base", e.target.value)}
-                        style={{ width: 30 }}
-                        title="Maternity Base"
-                      />
-                      <input
-                        type="number"
-                        value={mCarry}
-                        onChange={(e) => setValue("Maternity Leave", "carry", e.target.value)}
-                        style={{ width: 30 }}
-                        title="Maternity Carry"
-                      />
-                      <span style={{ minWidth: 30, textAlign: "right" }}>{mTotal}</span>
-                    </div>
-                  </td>
+                          const balance = allowance - taken;
 
-                  {/* Save */}
-                  <td>
-                    <button className="btn small blue" onClick={() => saveLeaveBalance(uid)}>
-                      💾 Save
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-         
 
-          </tbody>
+                          return (
+                            <div
+                              key={t.key}
+                              style={{
+                                border: "1px solid #e9eef5",
+                                borderRadius: 10,
+                                padding: 12,
+                                background: "#fff",
+                              }}
+                            >
+                              <div style={{ width: 670, display: "flex", alignItems: "center", gap: 12 }}>
+                                <div style={{ width: 100, fontWeight: 700 }}>{t.label}</div>
+
+                                {/* Header row inside */}
+                                <div style={{ display: "grid", gridTemplateColumns: t.hasCarry ? "120px 120px 120px 120px" : "120px 120px 120px", gap: 10, alignItems: "center" }}>
+                                  <div style={{ fontSize: 12, color: "#666" }}>Allowance</div>
+                                  {t.hasCarry && <div style={{ fontSize: 12, color: "#666" }}>Carry</div>}
+                                  <div style={{ fontSize: 12, color: "#666" }}>Taken</div>
+                                  <div style={{ fontSize: 12, color: "#666" }}>Balance</div>
+
+                                  {/* Inputs row */}
+                                  <input
+                                    type="number"
+                                    value={base}
+                                    onChange={(e) => setValue(t.key, "base", e.target.value)}
+                                   
+                                    placeholder="Base"
+                                  />
+
+                                  {t.hasCarry && (
+                                    <input
+                                      type="number"
+                                      value={carry}
+                                      onChange={(e) => setValue(t.key, "carry", e.target.value)}
+                                     
+                                      placeholder="Carry"
+                                    />
+                                  )}
+
+                                  {/* Taken: usually computed (read-only). If you want manual, change to input + store. */}
+                                 <input
+                                  type="number"
+                                  value={taken}
+                                  onChange={(e) => setValue(t.key, "taken", e.target.value)}
+                                  placeholder="Taken"
+                                />
+
+
+                                  <input
+                                    type="number"
+                                    value={balance}
+                                    readOnly
+                                    style={{
+                                      background: "#f7f8fa",
+                                      color: balance < 0 ? "red" : "#111",
+                                      fontWeight: 700,
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </td>
+
+                    <td>
+                      <button className="btn small blue" onClick={() => saveLeaveBalance(uid)}>
+                        💾 Save
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
           </table>
-          
-          </div>
+        </div>
+      </section>
 
-        
-        </section>
       )}
 
 
@@ -3470,9 +3589,9 @@ const saveMyLeaveEdit = async () => {
                   <th>Balance</th>
                 </tr>
               </thead>
-              <tbody>
+             {/*  <tbody>
                 {Object.keys(usersMap).map((uid)  => {
-                  // define available leave types
+                  
                   const leaveTypes = {
                     "Casual Leave": 6,
                     "Annual Leave": 10,
@@ -3481,14 +3600,14 @@ const saveMyLeaveEdit = async () => {
                     "Maternity Leave": 98,
                   };
 
-                  // get selected type from memory or default to "Casual Leave"
+                  
                   const selectedType = leaveSelections[uid] || "Casual Leave";
 
-                  // calculate for the selected type
+                 
                   const staffLeaves = allLeaves.filter(
                     (lv) => lv.userId === uid && lv.status === "approved"
                   );
-                  /* const allowance = leaveTypes[selectedType]; */
+                 
                   const allowance = (leaveBalances[uid]?.balances?.[selectedType]?.base || 0) +
                                      (leaveBalances[uid]?.balances?.[selectedType]?.carry || 0);
 
@@ -3506,7 +3625,7 @@ const saveMyLeaveEdit = async () => {
                   return (
                     <tr key={uid}>
                       <td>{displayUser(uid)}</td>
-                      {/* <td>{uname}</td> */}
+                     
                       <td>
                         <select
                           value={selectedType}
@@ -3530,7 +3649,65 @@ const saveMyLeaveEdit = async () => {
                     </tr>
                   );
                 })}
+              </tbody> */}
+              <tbody>
+                {Object.keys(usersMap).map((uid) => {
+                  const leaveTypes = {
+                    "Casual Leave": 6,
+                    "Annual Leave": 10,
+                    "Medical Leave": 90,
+                    "Unpaid Leave": 10,
+                    "Maternity Leave": 98,
+                  };
+
+                  const selectedType = leaveSelections[uid] || "Casual Leave";
+
+                  // ✅ Allowance from leaveBalances (carry only for Annual Leave)
+                  const base = leaveBalances?.[uid]?.balances?.[selectedType]?.base ?? 0;
+                  const carry =
+                    selectedType === "Annual Leave"
+                      ? (leaveBalances?.[uid]?.balances?.[selectedType]?.carry ?? 0)
+                      : 0;
+
+                  const allowance = Number(base) + Number(carry);
+
+                  // ✅ Taken from leaveBalances (manual admin edit)
+                  const taken = Number(
+                    leaveBalances?.[uid]?.balances?.[selectedType]?.taken ?? 0
+                  );
+
+                  const balance = Math.max(0, allowance - taken);
+
+                  return (
+                    <tr key={uid}>
+                      <td>{displayUser(uid)}</td>
+
+                      <td>
+                        <select
+                          value={selectedType}
+                          onChange={(e) =>
+                            setLeaveSelections((prev) => ({
+                              ...prev,
+                              [uid]: e.target.value,
+                            }))
+                          }
+                        >
+                          {Object.keys(leaveTypes).map((name) => (
+                            <option key={name}>{name}</option>
+                          ))}
+                        </select>
+                      </td>
+
+                      <td>{allowance}</td>
+                      <td>{taken}</td>
+                      <td style={{ color: balance === 0 ? "red" : "inherit" }}>
+                        {balance}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
+
             </table>
           </section>
         )}

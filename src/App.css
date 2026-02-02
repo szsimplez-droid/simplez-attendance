@@ -182,11 +182,11 @@ h1, h2, h3 {
 }
 
 .data-table tr:nth-child(even) {
-  background: #f9fafb;
+  background: #cbe5f1;
 }
 
 .data-table tr:hover {
-  background: #f1f5f9;
+  background: #d2dfeb;
 }
 
 .status-approved {
@@ -243,6 +243,7 @@ h1, h2, h3 {
 input:disabled {
   background-color: #abced8; 
 }
+
 
 .form-group {
   display: flex;
@@ -925,6 +926,11 @@ div.colheaders{
 @media (max-width: 900px){
   .modal .form-grid { grid-template-columns: 1fr; }
 }
+
+
+
+
+
 
 
 /* .payroll-form {
