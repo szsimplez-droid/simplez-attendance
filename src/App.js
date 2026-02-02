@@ -1290,6 +1290,156 @@ const checkLocationRange = async () => {
   const [editClockIn, setEditClockIn] = useState("");
   const [editClockOut, setEditClockOut] = useState("");
 
+  const [creatingAttendance, setCreatingAttendance] = useState(false);
+  const [createUserId, setCreateUserId] = useState("");
+  const [createDate, setCreateDate] = useState(""); // YYYY-MM-DD
+  const [createIn, setCreateIn] = useState("");
+  const [createOut, setCreateOut] = useState("");
+  const [createLocationName, setCreateLocationName] = useState("");
+
+
+    const openCreateAttendance = () => {
+    setSelectedUserId("");
+    setCreateDate("");
+    setCreateIn("");
+    setCreateOut("");
+    setCreateLocationName("");
+    setCreatingAttendance(true);
+  };
+
+
+  const [selectedUserId, setSelectedUserId] = useState("");
+
+  const adminCreateOrUpdateAttendance = async () => {
+  try {
+    // ✅ ONLY use selectedUserId + createDate
+    if (!selectedUserId || !createDate) {
+      notify("Select staff and date.");
+      return;
+    }
+
+    const clockInISO = createIn
+      ? makeISOFromDateAndTimeYangon(createDate, createIn)
+      : null;
+
+    const clockOutISO = createOut
+      ? makeISOFromDateAndTimeYangon(createDate, createOut)
+      : null;
+
+    // 1) Check if attendance doc already exists for that user/day
+    const q = query(
+      collection(db, "attendance"),
+      where("userId", "==", selectedUserId),
+      where("date", "==", createDate)
+    );
+
+    const snap = await getDocs(q);
+
+    if (!snap.empty) {
+      // ✅ Update existing doc
+      const existing = snap.docs[0];
+
+      await updateDoc(doc(db, "attendance", existing.id), {
+        clockIn: clockInISO,
+        clockInTime: createIn || null,
+        clockOut: clockOutISO,
+        clockOutTime: createOut || null,
+        locationName:
+          createLocationName || existing.data().locationName || "",
+        editedByAdmin: true,
+        editedAt: new Date().toISOString(),
+      });
+    } else {
+      // ✅ Create new doc (for forgotten day)
+      await addDoc(collection(db, "attendance"), {
+        userId: selectedUserId,
+        date: createDate,
+        clockIn: clockInISO,
+        clockInTime: createIn || null,
+        clockOut: clockOutISO,
+        clockOutTime: createOut || null,
+        locationName: createLocationName || "",
+        editedByAdmin: true,
+        editedAt: new Date().toISOString(),
+        createdByAdmin: true,
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    notify("✅ Attendance saved");
+    setCreatingAttendance(false);
+    loadAllAttendance();
+  } catch (err) {
+    console.error(err);
+    notify("❌ Cannot save attendance: " + err.message);
+  }
+};
+
+  const [attendanceSearch, setAttendanceSearch] = useState("");
+  const [attendanceMonth, setAttendanceMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; // "YYYY-MM"
+  });
+
+  const getEmp = (uid) => usersMap?.[uid] || {};
+  const getEid = (uid) => getEmp(uid)?.eid || "";
+  const getEmpName = (uid) => getEmp(uid)?.name || displayUser(uid) || "";
+  const getEmpEmail = (uid) => getEmp(uid)?.email || "";
+
+  const filteredAttendance = (allAttendance || [])
+  .filter((a) => {
+    // month filter: a.date should be "YYYY-MM-DD"
+    if (!attendanceMonth) return true;
+    return (a.date || "").startsWith(attendanceMonth);
+  })
+  .filter((a) => {
+    const q = attendanceSearch.trim().toLowerCase();
+    if (!q) return true;
+
+    const uid = a.userId;
+    const hay = [
+      getEid(uid),
+      getEmpName(uid),
+      getEmpEmail(uid),
+      a.date || "",
+    ]
+      .join(" ")
+      .toLowerCase();
+
+    return hay.includes(q);
+  })
+  // optional: sort latest first
+  .sort((x, y) => (y.date || "").localeCompare(x.date || ""));
+
+    /* Monthly attendance summary */
+    const monthAttendance = (allAttendance || []).filter((a) =>
+  (a.date || "").startsWith(attendanceMonth)
+);
+
+const monthlySummaryByUser = Object.keys(usersMap || {})
+  .map((uid) => {
+    const rows = monthAttendance.filter((a) => a.userId === uid);
+
+    const presentDays = rows.length;
+    const missingClockIn = rows.filter((r) => !r.clockInTime).length;
+    const missingClockOut = rows.filter((r) => !r.clockOutTime).length;
+
+    return {
+      uid,
+      eid: usersMap?.[uid]?.eid || "",
+      name: usersMap?.[uid]?.name || displayUser(uid) || "",
+      presentDays,
+      missingClockIn,
+      missingClockOut,
+    };
+  })
+  // sort by employee id order
+  .sort((a, b) => (a.eid || "").localeCompare(b.eid || ""));
+
+
+
+
+
   const makeISOFromDateAndTimeYangon = (dateStr, timeStr) => {
   if (!dateStr || !timeStr) return null;
   const dt = new Date(`${dateStr}T${timeStr}:00`);
@@ -1698,6 +1848,23 @@ const getLeaveTaken = (uid, leaveName, year = currentYear) => {
   }, 0);
 };
 
+/* All Staff Leave Summary */
+const [leaveSummarySearch, setLeaveSummarySearch] = useState("");
+
+const leaveSummaryUids = Object.keys(usersMap || {})
+  .filter((uid) => {
+    const q = leaveSummarySearch.trim().toLowerCase();
+    if (!q) return true;
+
+    const hay = [
+      getEid(uid),
+      getEmpName(uid),
+      getEmpEmail(uid),
+    ].join(" ").toLowerCase();
+
+    return hay.includes(q);
+  })
+  .sort((a, b) => (getEid(a) || "").localeCompare(getEid(b) || ""));
 
 
 
@@ -2057,8 +2224,9 @@ const getLeaveTaken = (uid, leaveName, year = currentYear) => {
         <button className="nav-item" onClick={() => { setActiveSidebar("admin-employee-form"); setSidebarOpen(false); }}><span className="icon">🧾</span> Employee Form</button>
         <button  className="nav-item" onClick={() => {setActiveSidebar("admin-employee");setSidebarOpen(false);}}><span className="icon">👥</span> Employee List</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-att");setSidebarOpen(false);}}><span className="icon">📊</span> All Attendance</button>
+        <button className="nav-item" onClick={() => {setActiveSidebar("admin-att-summary");setSidebarOpen(false);}}><span className="icon">📊</span> Monthly Attendance Summary</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-leave");setSidebarOpen(false);}}><span className="icon">📄</span>All Leave Requests</button>
-        <button className="nav-item" onClick={() => {setActiveSidebar("admin-leave-balance");setSidebarOpen(false);}}><span className="icon">📊</span> Leave Balance</button>
+        <button className="nav-item" onClick={() => {setActiveSidebar("admin-leave-balance");setSidebarOpen(false);}}><span className="icon">📊</span> Leave Balance Management</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-leave-summary");setSidebarOpen(false);}}><span className="icon">📝</span>All Staff Leave Summary</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-po");setSidebarOpen(false);}}><span className="icon">💼</span>All Staff P/O Reports</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-ot");setSidebarOpen(false);}}><span className="icon">⏫</span>All Overtime Requests</button>
@@ -3188,9 +3356,36 @@ const getLeaveTaken = (uid, leaveName, year = currentYear) => {
         {isAdmin && activeSidebar==="admin-att" && (
           <section className="card">
             <h2>All Staff Attendance</h2>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
+            <input
+              style={{ flex: 1,width: 350 }}
+              placeholder="Search by employee ID, name, email, date..."
+              value={attendanceSearch}
+              onChange={(e) => setAttendanceSearch(e.target.value)}
+             
+            />
+            <input
+              type="month"
+              value={attendanceMonth}
+              onChange={(e) => setAttendanceMonth(e.target.value)}
+              style={{ width: 150 }}
+            />
+            <button className="btn" onClick={() => setAttendanceSearch("")}>Clear</button>
+          </div>
+
+            <button
+            className="btn blue"
+            onClick={() => openCreateAttendance ()}
+            >
+            ➕ Add Attendance
+            </button>
+            </div>
+
             <table className="data-table">
               <thead>
               <tr>
+                <th>ID</th>
                 <th>User</th>
                 <th>Date</th>
                 <th>In</th>
@@ -3202,10 +3397,11 @@ const getLeaveTaken = (uid, leaveName, year = currentYear) => {
             </thead>
 
               <tbody>
-                {allAttendance.length===0 ? <tr><td colSpan="6">No attendance</td></tr> :
-                  allAttendance.map((a) => (
+                {allAttendance.length===0 ? <tr><td colSpan="7">No attendance</td></tr> :
+                  filteredAttendance.map((a) => (
                     <tr key={a.id}>
                       {/* <td>{usersMap[a.userId] || a.userId}</td> */}
+                       <td style={{ fontWeight: 700 }}>{getEid(a.userId) || "-"}</td>
                        <td>{usersMap[a.userId]?.name || usersMap[a.userId]?.email || a.userId}</td>
                       <td>{a.date}</td>
                       <td>{toMyanmarTime(a.clockIn)}</td>
@@ -3270,8 +3466,110 @@ const getLeaveTaken = (uid, leaveName, year = currentYear) => {
               </div>
             )}
 
+            {creatingAttendance && (
+  <div className="modal-overlay">
+    <div className="modal">
+      <h3>➕ Add Attendance</h3>
+
+      <div className="form" style={{ gap: 12 }}>
+        {/* Staff select */}
+        <select
+  value={selectedUserId}
+  onChange={(e) => setSelectedUserId(e.target.value)}
+>
+  <option value="">Select employee</option>
+  {Object.keys(usersMap).map((uid) => (
+    <option key={uid} value={uid}>
+      {displayUser(uid)} ({usersMap[uid]?.eid || ""})
+    </option>
+  ))}
+</select>
+
+
+
+        {/* Date */}
+        <input
+  type="date"
+  value={createDate}
+  onChange={(e) => setCreateDate(e.target.value)}
+/>
+
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <div style={{ flex: 1 }}>
+            <label>Clock In</label>
+            <input type="time" value={createIn} onChange={(e) => setCreateIn(e.target.value)} />
+          </div>
+
+          <div style={{ flex: 1 }}>
+            <label>Clock Out</label>
+            <input type="time" value={createOut} onChange={(e) => setCreateOut(e.target.value)} />
+          </div>
+        </div>
+
+        <input
+          placeholder="Location Name (optional)"
+          value={createLocationName}
+          onChange={(e) => setCreateLocationName(e.target.value)}
+        />
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+          <button className="btn blue" onClick={adminCreateOrUpdateAttendance}>💾 Save</button>
+          <button className="btn red" onClick={() => setCreatingAttendance(false)}>✖ Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
+
+
           </section>
         )}
+
+         {isAdmin && activeSidebar==="admin-att-summary" && (
+            <section className="card" style={{ marginTop: 18 }}>
+              <h2>Monthly Attendance Summary ({attendanceMonth})</h2>
+
+              <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
+                <label style={{ fontWeight: 600 }}>Month:</label>
+                <input
+                  type="month"
+                  value={attendanceMonth}
+                  onChange={(e) => setAttendanceMonth(e.target.value)}
+                  style={{ width: 160 }}
+                />
+              </div>
+
+
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Employee ID</th>
+                    <th>Name</th>
+                    <th>Present Days</th>
+                    <th>Missing Clock In</th>
+                    <th>Missing Clock Out</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {monthlySummaryByUser.map((r) => (
+                    <tr key={r.uid}>
+                      <td style={{ fontWeight: 700 }}>{r.eid || "-"}</td>
+                      <td>{r.name}</td>
+                      <td>{r.presentDays}</td>
+                      <td style={{ color: r.missingClockIn > 0 ? "red" : "inherit" }}>
+                        {r.missingClockIn}
+                      </td>
+                      <td style={{ color: r.missingClockOut > 0 ? "red" : "inherit" }}>
+                        {r.missingClockOut}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+
+          )}
 
         {/* ---- Admin: All Staff P/O Reports ---- */}
         {isAdmin && activeSidebar === "admin-po" && (
@@ -3579,9 +3877,21 @@ const getLeaveTaken = (uid, leaveName, year = currentYear) => {
           <section className="card">
             <h2>All Staff Leave Summary</h2>
 
+            <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
+            <input
+              style={{ flex: 1 }}
+              placeholder="Search by employee ID, name, email..."
+              value={leaveSummarySearch}
+              onChange={(e) => setLeaveSummarySearch(e.target.value)}
+            />
+            <button className="btn" onClick={() => setLeaveSummarySearch("")}>Clear</button>
+          </div>
+
+
             <table className="data-table">
               <thead>
                 <tr>
+                  <th>ID</th>
                   <th>User</th>
                   <th>Leave Type</th>
                   <th>Allowance</th>
@@ -3651,7 +3961,7 @@ const getLeaveTaken = (uid, leaveName, year = currentYear) => {
                 })}
               </tbody> */}
               <tbody>
-                {Object.keys(usersMap).map((uid) => {
+                {leaveSummaryUids.map((uid) => {
                   const leaveTypes = {
                     "Casual Leave": 6,
                     "Annual Leave": 10,
@@ -3680,6 +3990,7 @@ const getLeaveTaken = (uid, leaveName, year = currentYear) => {
 
                   return (
                     <tr key={uid}>
+                      <td style={{ fontWeight: 700 }}>{getEid(uid) || "-"}</td>
                       <td>{displayUser(uid)}</td>
 
                       <td>
