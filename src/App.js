@@ -3157,7 +3157,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
         )}
       </div>
 
-      <div>
+      <div style={{ position: "relative" }}>
       <label style={{ marginBottom: "10px" }}>Type leader name... </label>
       <input
       placeholder="Type leader name..."
