@@ -2814,7 +2814,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                 onClick={() => openEmployeeForEdit(e)}
                 style={{
                   cursor: "pointer",
-                  background: selectedEmpId === e.id ? "#eef6ff" : "transparent",
+                  background: selectedEmpId === e.id ? "#eef6ff" : "",
                 }}
               >
                 <td>{e.employeeCode || e.eid || "-"}</td>
