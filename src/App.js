@@ -525,6 +525,11 @@ const hasRole = (r) => roles.includes(r) || role === r; // supports old users to
 const isAdmin = hasRole("admin");
 const isLeader = hasRole("leader");
 
+const isHR = hasRole("hr");
+
+// payroll permission = ONLY admin
+const canAccessPayroll = isAdmin && !isHR;
+
 
 // load members under a leader (users where leaderId == leader uid)
 const loadLeaderMembers = async (leaderUid) => {
@@ -2390,8 +2395,13 @@ const leaveSummaryUids = Object.keys(usersMap || {})
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-po");setSidebarOpen(false);}}><span className="icon">💼</span>All Staff P/O Reports</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-ot");setSidebarOpen(false);}}><span className="icon">⏫</span>All Overtime Requests</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-summary");setSidebarOpen(false);}}><span className="icon">📅</span>Monthly Summary</button>
-        <button className="nav-item" onClick={() => {setActiveSidebar("admin-payroll"); setSidebarOpen(false);}}><span className="icon">🏦</span>Payroll Calculator</button>
-        <button className="nav-item" onClick={() => { setActiveSidebar("admin-payroll-summary"); setSidebarOpen(false); }}><span className="icon">💰</span> Payroll Summary</button> 
+         {/* 🔐 Payroll – ADMIN ONLY */}
+        {canAccessPayroll && (
+          <>
+          <button className="nav-item" onClick={() => {setActiveSidebar("admin-payroll"); setSidebarOpen(false);}}><span className="icon">🏦</span>Payroll Calculator</button>
+          <button className="nav-item" onClick={() => { setActiveSidebar("admin-payroll-summary"); setSidebarOpen(false); }}><span className="icon">💰</span> Payroll Summary</button>
+          </>
+        )}
         
         <div className="sidebar-actions">
           <button className="btn export" onClick={exportCSV}>⬇ Export CSV</button>
@@ -4239,7 +4249,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
         )}
 
         {/* ADMIN: Payroll Calculator */}
-        {isAdmin && activeSidebar === "admin-payroll" && (
+        {canAccessPayroll && isAdmin && activeSidebar === "admin-payroll" && (
           <section className="card">
             <h2>Payroll Calculator</h2>
             <PayrollCalculator usersMap={usersMap} />
@@ -4247,7 +4257,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
         )} 
 
 
-       {isAdmin && activeSidebar === "admin-payroll-summary" && (
+       {canAccessPayroll && isAdmin && activeSidebar === "admin-payroll-summary" && (
         <section className="card">
         <h2>Payroll Summary (All Calculated Fields)</h2>
         <div className="table-scroll">
