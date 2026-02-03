@@ -8,11 +8,12 @@ import { jsPDF } from "jspdf";
 import {autoTable} from "jspdf-autotable";
 import { getFunctions, httpsCallable } from "firebase/functions";
 
-
 import { collection, getDocs, onSnapshot,orderBy } from "firebase/firestore";// already imported, just make sure
 import { app, db, auth } from "./firebase";
 
 import {
+  writeBatch,
+  serverTimestamp,
   addDoc,
   query,
   where,
@@ -1297,8 +1298,12 @@ const checkLocationRange = async () => {
   const [createOut, setCreateOut] = useState("");
   const [createLocationName, setCreateLocationName] = useState("");
 
+  const [bulkMonth, setBulkMonth] = useState(""); // "2026-02"
+  const [bulkWeekdaysOnly, setBulkWeekdaysOnly] = useState(true);
+  const [bulkOverwrite, setBulkOverwrite] = useState(false); // usually false
 
-    const openCreateAttendance = () => {
+
+  const openCreateAttendance = () => {
     setSelectedUserId("");
     setCreateDate("");
     setCreateIn("");
@@ -1436,10 +1441,6 @@ const monthlySummaryByUser = Object.keys(usersMap || {})
   // sort by employee id order
   .sort((a, b) => (a.eid || "").localeCompare(b.eid || ""));
 
-
-
-
-
   const makeISOFromDateAndTimeYangon = (dateStr, timeStr) => {
   if (!dateStr || !timeStr) return null;
   const dt = new Date(`${dateStr}T${timeStr}:00`);
@@ -1479,6 +1480,164 @@ const adminUpdateAttendanceTime = async () => {
     notify("❌ Cannot update attendance: " + err.message);
   }
 };
+
+/* Attendance manual edit for 1month by admin */ 
+  const getDatesInMonth = (yyyyMm, weekdaysOnly) => {
+  const [y, m] = yyyyMm.split("-").map(Number);
+  const first = new Date(y, m - 1, 1);
+  const last = new Date(y, m, 0);
+
+  const out = [];
+  for (let d = new Date(first); d <= last; d.setDate(d.getDate() + 1)) {
+    const day = d.getDay(); // 0 Sun ... 6 Sat
+    if (weekdaysOnly && (day === 0 || day === 6)) continue;
+
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    out.push(`${yyyy}-${mm}-${dd}`);
+  }
+  return out;
+};
+
+const adminBulkCreateMonthAttendance = async () => {
+  try {
+    if (!selectedUserId || !bulkMonth) {
+      notify("Select employee and month.");
+      return;
+    }
+
+    const dates = getDatesInMonth(bulkMonth, bulkWeekdaysOnly);
+
+    const batch = writeBatch(db);
+    let createdCount = 0;
+    let skippedCount = 0;
+
+    for (const dateStr of dates) {
+      const docId = `${selectedUserId}_${dateStr}`; // ✅ unique per day
+      const ref = doc(db, "attendance", docId);
+
+      const existsSnap = await getDoc(ref);
+
+      if (existsSnap.exists() && !bulkOverwrite) {
+        skippedCount++;
+        continue;
+      }
+
+      const clockInISO = createIn
+        ? makeISOFromDateAndTimeYangon(dateStr, createIn)
+        : null;
+
+      const clockOutISO = createOut
+        ? makeISOFromDateAndTimeYangon(dateStr, createOut)
+        : null;
+
+      batch.set(
+        ref,
+        {
+          userId: selectedUserId,
+          date: dateStr,
+          clockIn: clockInISO,
+          clockInTime: createIn || null,
+          clockOut: clockOutISO,
+          clockOutTime: createOut || null,
+          locationName: createLocationName || "",
+          createdByAdmin: true,
+          editedByAdmin: true,
+          createdAt: serverTimestamp(),
+          editedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      createdCount++;
+    }
+
+    await batch.commit();
+
+    notify(`✅ Bulk done. Created/updated: ${createdCount}, Skipped: ${skippedCount}`);
+    setCreatingAttendance(false);
+    loadAllAttendance();
+  } catch (err) {
+    console.error(err);
+    notify("❌ Cannot bulk add: " + err.message);
+  }
+};
+
+//attendance delete by admin
+
+// delete single day
+const adminDeleteAttendance = async () => {
+  try {
+    if (!editingAttendance?.id) {
+      notify("No attendance selected.");
+      return;
+    }
+
+    if (!window.confirm("Delete this attendance record?")) return;
+
+    await deleteDoc(doc(db, "attendance", editingAttendance.id));
+
+    notify("🗑 Attendance deleted");
+    setEditingAttendance(null);
+    loadAllAttendance();
+  } catch (err) {
+    console.error(err);
+    notify("❌ Delete failed: " + err.message);
+  }
+};
+
+
+//delete whole month
+const adminDeleteMonthAttendance = async () => {
+  try {
+    if (!selectedUserId || !bulkMonth) {
+      notify("Select employee and month.");
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `Delete ALL attendance for ${displayUser(selectedUserId)} in ${bulkMonth}?`
+      )
+    ) {
+      return;
+    }
+
+    // ✅ Only ONE where => no composite index needed
+    const q = query(
+      collection(db, "attendance"),
+      where("userId", "==", selectedUserId)
+    );
+
+    const snap = await getDocs(q);
+
+    // ✅ filter month on client side (bulkMonth = "YYYY-MM")
+    const docsToDelete = snap.docs.filter((d) =>
+      (d.data()?.date || "").startsWith(bulkMonth)
+    );
+
+    if (docsToDelete.length === 0) {
+      notify("No attendance found for that month.");
+      return;
+    }
+
+    // ✅ batch delete (limit 500, month is safe)
+    const batch = writeBatch(db);
+    docsToDelete.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+
+    notify(`🗑 Deleted ${docsToDelete.length} attendance records`);
+    loadAllAttendance();
+  } catch (err) {
+    console.error(err);
+    notify("❌ Delete failed: " + err.message);
+  }
+};
+
+
+
+
 
 // attendance edit by leader
 const [editingLeaderAttendance, setEditingLeaderAttendance] = useState(null);
@@ -3458,6 +3617,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                     <button className="btn blue" onClick={adminUpdateAttendanceTime}>
                       💾 Save
                     </button>
+                     <button  className="btn red" onClick={adminDeleteAttendance} >  🗑 Delete </button>
                     <button className="btn red" onClick={() => setEditingAttendance(null)}>
                       ✖ Cancel
                     </button>
@@ -3466,62 +3626,65 @@ const leaveSummaryUids = Object.keys(usersMap || {})
               </div>
             )}
 
+            {/* Add attend modal box */}
             {creatingAttendance && (
-  <div className="modal-overlay">
-    <div className="modal">
-      <h3>➕ Add Attendance</h3>
+              <div className="modal-overlay">
+                <div className="modal">
+                  <h3>➕ Add Attendance</h3>
+                  
+                  <div className="form" style={{ gap: 12 }}>
+                    {/* Staff select */}
+                    <div>
+                       <label style={{ fontWeight: 600 }}>Select employee</label>
+                      <select value={selectedUserId} onChange={(e) => setSelectedUserId(e.target.value)}>
+                      <option value="">Select employee</option>
+                      {Object.keys(usersMap).map((uid) => (
+                        <option key={uid} value={uid}>
+                          {displayUser(uid)} ({usersMap[uid]?.eid || ""})
+                        </option>
+                      ))}
+                    </select>
+                    </div>
+                    
+                    {/* Date */}
+                    <div>
+                       <label style={{ fontWeight: 600 }}>For Single Day Insert</label>
+                      <input type="date" value={createDate} onChange={(e) => setCreateDate(e.target.value)}/>
+                      </div>
+                       <div>
+                      <label style={{ fontWeight: 600 }}>For Whole Month Insert</label>
+                      <input type="month" value={bulkMonth} onChange={(e) => setBulkMonth(e.target.value)} />
+                      <label style={{ display: "inline" }}>
+                      <input type="checkbox" checked={bulkWeekdaysOnly} onChange={(e) => setBulkWeekdaysOnly(e.target.checked)} style={{ width: 18,height:18,verticalAlign:"middle" }}/>
+                        Weekdays only (Mon–Fri)
+                      </label>
+                    </div>
+                      
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <div style={{ flex: 1 }}>
+                        <label>Clock In</label>
+                        <input type="time" value={createIn} onChange={(e) => setCreateIn(e.target.value)} />
+                      </div>
 
-      <div className="form" style={{ gap: 12 }}>
-        {/* Staff select */}
-        <select
-  value={selectedUserId}
-  onChange={(e) => setSelectedUserId(e.target.value)}
->
-  <option value="">Select employee</option>
-  {Object.keys(usersMap).map((uid) => (
-    <option key={uid} value={uid}>
-      {displayUser(uid)} ({usersMap[uid]?.eid || ""})
-    </option>
-  ))}
-</select>
+                      <div style={{ flex: 1 }}>
+                        <label>Clock Out</label>
+                        <input type="time" value={createOut} onChange={(e) => setCreateOut(e.target.value)} />
+                      </div>
+                    </div>
 
-
-
-        {/* Date */}
-        <input
-  type="date"
-  value={createDate}
-  onChange={(e) => setCreateDate(e.target.value)}
-/>
-
-
-        <div style={{ display: "flex", gap: 10 }}>
-          <div style={{ flex: 1 }}>
-            <label>Clock In</label>
-            <input type="time" value={createIn} onChange={(e) => setCreateIn(e.target.value)} />
-          </div>
-
-          <div style={{ flex: 1 }}>
-            <label>Clock Out</label>
-            <input type="time" value={createOut} onChange={(e) => setCreateOut(e.target.value)} />
-          </div>
-        </div>
-
-        <input
-          placeholder="Location Name (optional)"
-          value={createLocationName}
-          onChange={(e) => setCreateLocationName(e.target.value)}
-        />
-
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
-          <button className="btn blue" onClick={adminCreateOrUpdateAttendance}>💾 Save</button>
-          <button className="btn red" onClick={() => setCreatingAttendance(false)}>✖ Cancel</button>
-        </div>
-      </div>
-    </div>
-  </div>
-)}
-
+                    <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                      <button className="btn blue" onClick={adminCreateOrUpdateAttendance}>📅 Add Single Day</button>
+                      <button className="btn blue" onClick={adminBulkCreateMonthAttendance}>📅 Add Whole Month</button>
+                      <button  className="btn red" onClick={adminDeleteMonthAttendance}>  🗑 Delete Whole Month</button>
+                    </div>
+                    <div style={{ width: 100, margin: "0 auto"}}>
+                      <button className="btn red" onClick={() => setCreatingAttendance(false)}>✖ Cancel</button>
+                    </div>
+                  </div>
+            
+                  </div>
+                </div>
+              )}
 
           </section>
         )}
@@ -3570,6 +3733,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
             </section>
 
           )}
+
 
         {/* ---- Admin: All Staff P/O Reports ---- */}
         {isAdmin && activeSidebar === "admin-po" && (
