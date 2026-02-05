@@ -19,4 +19,9 @@ export default function handler(req, res) {
       ? fs.readdirSync(path.join(base, "api", "data"))
       : "NO /api/data FOLDER"
   });
+  
+  res.json(rows[0]);
 }
+
+
+
