@@ -31,6 +31,77 @@ export default function PayrollCalculator({ usersMap }) {
   return `${h}h ${m}m`;
 }
 
+const [ranks, setRanks] = useState([]);   // list
+const [pitches, setPitches] = useState([]); // list
+
+const [rank, setRank] = useState("");    // selected
+const [pitch, setPitch] = useState("");  // selected
+
+
+const [month, setMonth] = useState("");
+
+useEffect(() => {
+  fetch("/api/ranks")
+    .then(r => r.json())
+    .then(setRanks);
+}, []);
+
+
+useEffect(() => {
+  if (rank) {
+    fetch(`/api/pitches?rank=${rank}`)
+      .then(r => r.json())
+      .then(setPitches);
+  } else {
+    setPitches([]);
+  }
+}, [rank]);
+
+
+useEffect(() => {
+  if (rank && pitch) {
+    fetch(`/api/salary?rank=${rank}&pitch=${pitch}`)
+      .then(res => res.json())
+      .then(data => {
+        setData(prev => ({
+          ...prev,
+          basicSalary: data.salary
+        }));
+      });
+  }
+}, [rank, pitch]);
+
+
+
+const formatMoney = (n) => {
+  const num = Number(n);
+  return isNaN(num) ? "" : num.toLocaleString("en-US");
+};
+
+
+const parseMoney = (v) =>
+  Number(String(v).replace(/,/g, ""));
+
+const MoneyInput = ({ name, value, onChange, disabled }) => {
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      value={formatMoney(value)}
+      disabled={disabled}
+      onChange={(e) => {
+        const raw = e.target.value;
+        const num = parseMoney(raw);
+        if (!isNaN(num)) {
+          onChange({
+            target: { name, value: num }
+          });
+        }
+      }}
+    />
+  );
+};
+
 
   // AUTO FILL DATA FROM FIRESTORE
   const loadPayrollAutoData = async (uid) => {
@@ -103,10 +174,6 @@ export default function PayrollCalculator({ usersMap }) {
 
 
 // ---------------- UPDATE FORM ----------------
-setData((prev) => ({
-  ...prev,
- }));
-
 
   // --- UPDATE FORM ---
   setData((prev) => ({
@@ -119,6 +186,7 @@ setData((prev) => ({
     holidayWorkHours: holidayHours,
     overtimeHours: otHours,
     workedDays: attendanceDays,
+   
   }));
 };
 
@@ -131,7 +199,7 @@ setData((prev) => ({
     type: "正社員",
     staffposition: "",
     staffteam: "",
-    paymonth:"",
+    month:"",
     workType: "フルタイム",
     joinDate: "",
     standardDays: 0,
@@ -144,6 +212,7 @@ setData((prev) => ({
     holidayWorkDays: 0,
     holidayWorkHours: 0,
     overtimeHours: 0,
+    deductionRate:0,
     lateHours: 0,
     basicSalary: 0,
     permanentEmp: 0,
@@ -159,36 +228,54 @@ setData((prev) => ({
     cbRate: 3950,
   });
 
-/*   const handleChange = (e) => {
+/* const handleChange = (e) => {
   const { name, value } = e.target;
-  // If value is blank, keep blank
-  if (value === "") {
-    setData((prev) => ({ ...prev, [name]: "" }));
-  } else {
-    const num = parseFloat(value);
-    setData((prev) => ({
-      ...prev,
-      [name]: isNaN(num) ? value : num,
-    }));
-  }
-}; */
+  if (!name) return;
+
+  setData(prev => ({
+    ...prev,
+    [name]: numberFields.has(name)
+      ? (value === "" ? 0 : Number(value))
+      : value   // <-- keep text as text
+  }));
+};
+ */
+
+/* const handleChange = (e) => {
+  const { name, value } = e.target;
+  if (!name) return;
+
+  setData(prev => ({
+    ...prev,
+    [name]: value
+  }));
+};
+ */
+
+const numberFields = new Set([
+  "standardDays", "workedDays",
+  "annualLeave", "casualLeave", "absentDays",
+  "sickLeave", "compLeave",
+  "holidayWorkDays", "holidayWorkHours",
+  "overtimeHours", "lateHours",
+  "permanentEmp", "pitchTransfer",
+  "jobAllowance", "directorAllowance",
+  "languageAllowance", "ssb",
+  "incomeTax", "bonus",
+  "centralRate", "cbRate"
+]);
 
 const handleChange = (e) => {
   const { name, value } = e.target;
 
-  // ✅ Prevent creating "" or undefined keys in state
-  if (!name) return;
-
-  if (value === "") {
-    setData((prev) => ({ ...prev, [name]: "" }));
-  } else {
-    const num = parseFloat(value);
-    setData((prev) => ({
-      ...prev,
-      [name]: isNaN(num) ? value : num,
-    }));
-  }
+  setData(prev => ({
+    ...prev,
+    [name]: numberFields.has(name)
+      ? (value === "" ? 0 : Number(value))
+      : value
+  }));
 };
+
 
 const sanitizeForFirestore = (obj) => {
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) return obj;
@@ -205,12 +292,12 @@ const sanitizeForFirestore = (obj) => {
 };
 
   const actualHours = data.standardDays * 8;
-  const holidayDays =
-    data.annualLeave +
-    data.casualLeave +
-    data.absentDays +
-    data.sickLeave +
-    data.compLeave;
+   const holidayDays =
+  Number(data.annualLeave) +
+  Number(data.casualLeave) +
+  Number(data.absentDays) +
+  Number(data.sickLeave) +
+  Number(data.compLeave);
 
   const basicLatest =
     data.basicSalary + data.permanentEmp + data.pitchAdjust + data.pitchTransfer;
@@ -252,75 +339,86 @@ const sanitizeForFirestore = (obj) => {
 
   const preferentialTotal = usdConversion * data.cbRate;
 
+const sortedUsers = Object.entries(usersMap)
+  .sort(([, a], [, b]) => a.eid.localeCompare(b.eid));
+
+
+
   return (
     <div className="payroll-form">
       <h1>Payroll Calculator</h1>
 
       <section className="form-section">
         <h2>👤 Employee</h2>
-        {/* --- Select Staff Dropdown --- */}
+            
+        <select
+          value={selectedUserId}
+          onChange={(e) => {
+            const uid = e.target.value;
+            const user = usersMap[uid];
 
-           {/*  <select
-        value={selectedUserId}
-        onChange={(e) => {
-            setSelectedUserId(e.target.value);
-            loadPayrollAutoData(e.target.value);
-        }}
-    >
-        <option value="">-- Select Employee --</option>
+            setSelectedUserId(uid);
 
-        {Object.entries(usersMap).map(([uid, name]) => (
+            setData(prev => ({
+              ...prev,
+              userId: uid,
+              name: user.name || "",
+              staffId: user.eid || "",
+              staffteam: user.team || "",
+              staffposition: user.position || "",
+              languageLevel: user.languageLevel || ""
+            }));
+
+            loadPayrollAutoData(uid);
+          }}
+        >
+          <option value="">Select Staff</option>
+          {sortedUsers.map(([uid, u]) => (
             <option key={uid} value={uid}>
-                {name}
+              {u.eid} {u.name} {u.jpName || ""}
             </option>
-        ))}
-  </select> */}
+          ))}
+        </select>
 
-      {/* <select
-      value={selectedUserId}
-      onChange={(e) => {
-        setSelectedUserId(e.target.value);
-       
-        setData(prev => ({
-          ...prev,
-          userId: e.target.value   // THIS IS UID
-        }));
-      }}
-    >
-      <option value="">Select Staff</option>
-      {Object.entries(usersMap).map(([uid, name]) => (
-        <option key={uid} value={uid}>{name}</option>
-      ))}
-    </select> */}
-
-    <select
-  value={selectedUserId}
-  onChange={(e) => {
-    const uid = e.target.value;
-    setSelectedUserId(uid);
-
-    setData(prev => ({ ...prev, userId: uid }));
-    loadPayrollAutoData(uid); // ✅ put back
-  }}
->
-  <option value="">Select Staff</option>
-  {Object.entries(usersMap).map(([uid, u]) => (
-    <option key={uid} value={uid}>
-      {typeof u === "string" ? u : (u.name || u.email || uid)}
-    </option>
-  ))}
-</select>
 
 
         <div className="form-grid">
-
-
           <label>名前 <br></br>Name<input name="name" value={data.name} onChange={handleChange} /></label>
           <label>語力 <br></br>JLPT Level<input name="languageLevel" value={data.languageLevel} onChange={handleChange} /></label>
           <label>社員番号 <br></br>Employee No<input name="staffId" value={data.staffId} onChange={handleChange} /></label>
           <label>役職 <br></br>Position<input name="staffposition" value={data.staffposition} onChange={handleChange} /></label>
           <label>チーム <br></br>Team<input name="staffteam" value={data.staffteam} onChange={handleChange} /></label>
-          <label>For the Month of<input name="paymonth" value={data.paymonth} onChange={handleChange} /></label>
+         {/*  <label>For the Month of<input name="paymonth" value={data.paymonth} onChange={handleChange} /></label> */}
+          <select value={month} onChange={(e) =>{setMonth(e.target.value);setData(prev =>({ ...prev, month: e.target.value }));}}>
+          <option value="">Select Month</option>
+          <option value="January">January</option>
+          <option value="February">February</option>
+          <option value="March">March</option>
+          <option value="April">April</option>
+          <option value="May">May</option>
+          <option value="June">June</option>
+          <option value="July">July</option>
+          <option value="August">August</option>
+          <option value="September">September</option>
+          <option value="October">October</option>
+          <option value="November">November</option>
+          <option value="December">December</option>
+        </select>
+        
+        <select value={rank} onChange={e => {setRank(e.target.value);  setPitch("");}}>
+        <option value="">Select Rank</option>
+        {ranks.map(r => (
+        <option key={r} value={r}>{r}</option>
+        ))}
+        </select>
+
+        <select value={pitch} onChange={e => setPitch(e.target.value)}>
+        <option value="">Select Pitch</option>
+        {pitches.map(p => (
+        <option key={p} value={p}>{p}</option>
+        ))}
+        </select>
+
         </div>
       </section>
 
@@ -358,104 +456,63 @@ const sanitizeForFirestore = (obj) => {
       <section className="form-section">
         <h2>💰 Rates</h2>
         <div className="form-grid">
-          <label>残業手当@1時間 <input value={overtimeRate} disabled /></label>
-          <label>休日手当@1時間 <input value={holidayRate} disabled /></label>
-          <label>減給額@1時間 <input value={deductionRate} disabled /></label>
+          <label>残業手当@1時間 <MoneyInput value={overtimeRate} disabled /></label>
+          <label>休日手当@1時間 <MoneyInput value={holidayRate} disabled /></label>
+          <label>減給額@1時間 <MoneyInput value={deductionRate} disabled /></label>
         </div>
       </section>
 
       <section className="form-section">
         <h2>💵 Salary</h2>
         <div className="form-grid">
-          <label>基本給 <br></br>Basic salary<input type="number" name="basicSalary" value={data.basicSalary} onChange={handleChange} /></label>
-          <label>正社員付与 <br></br>Permanent employee<input type="number" name="permanentEmp" value={data.permanentEmp} onChange={handleChange} /></label>
+          <label>基本給 <br></br>Basic salary<MoneyInput name="basicSalary" value={data.basicSalary} disabled/></label>
+          <label>正社員付与 <br></br>Permanent employee<MoneyInput name="permanentEmp" value={data.permanentEmp} onChange={handleChange} /></label>
          {/*  <label>ピッチ間調整 <input type="number" name="pitchAdjust" value={data.pitchAdjust} onChange={handleChange} /></label> */}
-          <label>ピッチ移行調整 <br></br> Pitch adjust<input type="number" name="pitchTransfer" value={data.pitchTransfer} onChange={handleChange} /></label>
-          <label>基本給(最新) <br></br>Basic salary (latest)<input value={basicLatest} disabled /></label>
-          <label>役職手当 <br></br> Job title allowance<input type="number" name="jobAllowance" value={data.jobAllowance} onChange={handleChange} /></label>
-          <label>取締役手当 <br></br>Director allowance<input type="number" name="directorAllowance" value={data.directorAllowance} onChange={handleChange} /></label>
-          <label>語力手当 <br></br>Language Allowance (JLPT) <input type="number" name="languageAllowance" value={data.languageAllowance} onChange={handleChange} /></label>
-          <label>基本給+手当 <br></br>Basic salary + Allowance <input value={basicTotal} disabled /></label>
-          <label>固定残業 <br></br>Fixed overtime <input value={fixedOvertime} disabled /></label>
+          <label>ピッチ移行調整 <br></br> Pitch adjust<MoneyInput name="pitchTransfer" value={data.pitchTransfer} onChange={handleChange} /></label>
+          <label>基本給(最新) <br></br>Basic salary (latest)<MoneyInput value={basicLatest} disabled /></label>
+          <label>役職手当 <br></br> Job title allowance<MoneyInput name="jobAllowance" value={data.jobAllowance} onChange={handleChange} /></label>
+          <label>取締役手当 <br></br>Director allowance<MoneyInput name="directorAllowance" value={data.directorAllowance} onChange={handleChange} /></label>
+          <label>語力手当 <br></br>Language Allowance (JLPT) <MoneyInput name="languageAllowance" value={data.languageAllowance} onChange={handleChange} /></label>
+          <label>基本給+手当 <br></br>Basic salary + Allowance <MoneyInput value={basicTotal} disabled /></label>
+          <label>固定残業 <br></br>Fixed overtime <MoneyInput value={fixedOvertime} disabled /></label>
         </div>
       </section>
 
       <section className="form-section">
         <h2>📊 Deductions & Allowances</h2>
         <div className="form-grid">
-          <label>欠勤控除 <br></br>Absence deduction<input value={absenceDeduction} disabled /></label>
-          <label>遅刻控除 <br></br>Late deduction<input value={lateDeduction} disabled /></label>
-          <label>固定残業控除 <br></br>Fixed overtime deduction<input value={fixedOvertimeDeduction} disabled /></label>
-          <label>社会福祉 <br></br>(SSB) <input type="number" name="ssb" value={data.ssb} onChange={handleChange} /></label>
-          <label>所得税 <br></br>(Income Tax) <input type="number" name="incomeTax" value={data.incomeTax} onChange={handleChange} /></label>
-          <label>残業手当 <br></br>Overtime allowance <input value={overtimeAllowance} disabled /></label>
-          <label>休出手当 <br></br>Holiday work allowance<input value={holidayAllowance} disabled /></label>
-          <label>在宅勤務手当 <br></br>Work from home Allowance<input value={wfhAllowance} disabled /></label>
-          <label>賞与 <br></br>Bonus<input type="number" name="bonus" value={data.bonus} onChange={handleChange} /></label>
+          <label>欠勤控除 <br></br>Absence deduction<MoneyInput value={absenceDeduction} disabled /></label>
+          <label>遅刻控除 <br></br>Late deduction<MoneyInput value={lateDeduction} disabled /></label>
+          <label>固定残業控除 <br></br>Fixed overtime deduction<MoneyInput value={fixedOvertimeDeduction} disabled /></label>
+          <label>社会福祉 <br></br>(SSB) <MoneyInput name="ssb" value={data.ssb} onChange={handleChange} /></label>
+          <label>所得税 <br></br>(Income Tax) <MoneyInput name="incomeTax" value={data.incomeTax} onChange={handleChange} /></label>
+          <label>残業手当 <br></br>Overtime allowance <MoneyInput value={overtimeAllowance} disabled /></label>
+          <label>休出手当 <br></br>Holiday work allowance<MoneyInput value={holidayAllowance} disabled /></label>
+          <label>在宅勤務手当 <br></br>Work from home Allowance<MoneyInput value={wfhAllowance} disabled /></label>
+          <label>賞与 <br></br>Bonus<MoneyInput name="bonus" value={data.bonus} onChange={handleChange} /></label>
         </div>
       </section>
 
       <section className="form-section">
         <h2>🏦 Totals</h2>
         <div className="form-grid">
-          <label>総支給額 <br></br>The Total Amount paid <input value={totalPay} disabled /></label>
-          <label>控除後(当月給与) <br></br>After deduction<input value={afterDeduction} disabled /></label>
-          <label>給与振込額 <br></br>Salary transfer amount<input value={salaryTransfer} disabled /></label>
-          <label>USD/MMK(中央銀行) <br></br>Central Bank rate<input type="number" name="centralRate" value={data.centralRate} onChange={handleChange} /></label>
-          <label>USD/MMK<br></br>CB Bank rate <input type="number" name="cbRate" value={data.cbRate} onChange={handleChange} /></label>
-          <label>USD換算 <br></br>USD conversion <input value={usdConversion.toFixed(2)} disabled /></label>
+          <label>総支給額 <br></br>The Total Amount paid <MoneyInput value={totalPay} disabled /></label>
+          <label>控除後(当月給与) <br></br>After deduction<MoneyInput value={afterDeduction} disabled /></label>
+          <label>給与振込額 <br></br>Salary transfer amount<MoneyInput value={salaryTransfer} disabled /></label>
+          <label>USD/MMK(中央銀行) <br></br>Central Bank rate<MoneyInput type="number" name="centralRate" value={data.centralRate} onChange={handleChange} /></label>
+          <label>USD/MMK<br></br>CB Bank rate <MoneyInput name="cbRate" value={data.cbRate} onChange={handleChange} /></label>
+          <label>USD換算 <br></br>USD conversion <MoneyInput value={usdConversion.toFixed(2)} disabled /></label>
         </div>
       </section>
 
       <section className="form-section">
         <h2>🏦 Special Payment amount</h2>
         <div className="form-grid">
-          <label>総支給額(優遇レート) <input value={preferentialTotal.toFixed(2)} disabled /></label>
+          <label>総支給額(優遇レート) <MoneyInput value={preferentialTotal.toFixed(2)} disabled /></label>
         </div>
       </section>
 
-    {/*   <button
-  className="btn submit"
-  onClick={async () => {
-    if (!data.name) return notify("Please enter employee name before saving");
-    try {
-      const payload = {
-        ...data,
-        actualHours,
-        holidayDays,
-        basicLatest,
-        basicTotal,
-        overtimeRate,
-        holidayRate,
-        deductionRate,
-        fixedOvertime,
-        totalPay,
-        absenceDeduction,
-        lateDeduction,
-        fixedOvertimeDeduction,
-        overtimeAllowance,
-        holidayAllowance,
-        wfhAllowance,
-        afterDeduction,
-        salaryTransfer,
-        usdConversion,
-        preferentialTotal,
-        createdAt: new Date().toISOString(),
-      };
-      await addDoc(collection(db, "payrollSummary"), payload);
-      notify("✅ Payroll saved successfully.");
-      window.dispatchEvent(new Event("refreshPayroll"));
-    } catch (err) {
-      notify("Error saving payroll: " + err.message);
-    }
-  }}
->
-  💾 Save Payroll
-</button> */}
-
-
-
-  <button
+    <button
   className="btn submit"
   onClick={async () => {
     if (!selectedUserId) return notify("Please select a staff first!");
