@@ -65,7 +65,7 @@ useEffect(() => {
       .then(data => {
         setData(prev => ({
           ...prev,
-          basicSalary: data.salary
+          basicSalary: data.Salary
         }));
       });
   }
