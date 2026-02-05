@@ -4298,6 +4298,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
           <th>総支給額(優遇レート)</th>
           <th>CBレート</th>
           <th>Date</th>
+          <th>Pay Month</th>
           <th>Action</th>
         </tr>
       </thead>
@@ -4341,6 +4342,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
               <td>{p.preferentialTotal?.toLocaleString()}</td>
               <td>{p.cbRate}</td>
               <td>{p.createdAt?.slice(0,10)}</td>
+              <td>For {p.month}</td>
               <td>
                 <div style={{ display: "flex", justifyContent: "center", gap: "3px" }}>
                 <button className="btn small blue" onClick={() => setSelectedPayroll(p)}>View</button>
