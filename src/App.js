@@ -849,7 +849,7 @@ useEffect(() => {
   doc.text(`Team: ${p.staffteam || ""}`, 14, 36);
   doc.text(`Position: ${p.staffposition || ""}`, 14, 42);
   doc.text(`Date: ${p.createdAt?.slice(0,10)}`, 150, 30);
-  doc.text(`For The Month of: ${p.paymonth.slice(0,10)}`, 150, 35);
+  doc.text(`For The Month of: ${p.month.slice(0,10)}`, 150, 35);
 
   // Days Table
   autoTable(doc, {
@@ -998,7 +998,7 @@ const sendPayslip = async (p) => {
   await addDoc(collection(db, "payslips"), {
   userId: p.userId,
   payrollData: p, // 🔑 store full payroll
-  paymonth: p.paymonth,
+  paymonth: p.month,
   status: "sent",
   createdAt: new Date().toISOString()
 });
