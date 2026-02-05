@@ -13,8 +13,7 @@ module.exports = (req, res) => {
     r => r.Rank === rank && String(r.Pitch) === String(pitch)
   );
 
-  if (!row) return res.status(404).json({ salary: 0 });
+  if (!row) return res.status(404).json({ Salary: 0 });
 
-  res.json({ salary: Number(row.BasicSalary) });
-  res.json(rows[0]);
-};
+  res.json({ Salary: Number(row.BasicSalary) });
+ };
