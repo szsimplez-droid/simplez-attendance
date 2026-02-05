@@ -101,64 +101,11 @@ export default function PayrollCalculator({ usersMap }) {
     if (diff > 0) otHours += diff / 60;
   });
 
-  // --- LOAD P/O REPORT (Late hours) ---
-// -------------------- LATE / EARLY / OUTING --------------------
-let totalLateMinutes = 0;
-let totalEarlyMinutes = 0;
-let totalOutMinutes = 0;
-
-// Official times
-const workStart = 8 * 60;   // 08:00
-const workEnd = 17 * 60;    // 17:00
-
-// --- Check attendance for LATE & EARLY ---
-attSnap.forEach((doc) => {
-  const a = doc.data();
-  if (!a.clockIn || !a.clockOut) return;
-
-  const ci = new Date(a.clockIn);
-  const co = new Date(a.clockOut);
-
-  const ciMin = ci.getHours() * 60 + ci.getMinutes();
-  const coMin = co.getHours() * 60 + co.getMinutes();
-
-  // LATE
-  if (ciMin > workStart) totalLateMinutes += ciMin - workStart;
-
-  // EARLY LEAVE
-  if (coMin < workEnd) totalEarlyMinutes += workEnd - coMin;
-});
-
-// --- OUTING FROM P/O REPORT ---
-const poQ = query(collection(db, "poReports"), where("userId", "==", uid));
-const poSnap = await getDocs(poQ);
-
-poSnap.forEach((doc) => {
-  const p = doc.data();
-  const [fh, fm] = p.fromTime.split(":").map(Number);
-  const [th, tm] = p.toTime.split(":").map(Number);
-
-  const start = fh * 60 + fm;
-  const end = th * 60 + tm;
-
-  if (end > start) totalOutMinutes += end - start;
-});
-
-// TOTAL LATE/EARLY/OUT
-const totalLateHoursDecimal =
-  (totalLateMinutes + totalEarlyMinutes + totalOutMinutes) / 60;
-
-// Convert to hr/min formatted string
-const totalLateHM = minutesToHM(
-  totalLateMinutes + totalEarlyMinutes + totalOutMinutes
-);
 
 // ---------------- UPDATE FORM ----------------
 setData((prev) => ({
   ...prev,
-  lateHours: totalLateHoursDecimal,  // keeps numeric for calculation
-  lateHM: totalLateHM,               // add readable format
-}));
+ }));
 
 
   // --- UPDATE FORM ---
@@ -171,8 +118,6 @@ setData((prev) => ({
     holidayWorkDays: holidayDays,
     holidayWorkHours: holidayHours,
     overtimeHours: otHours,
-    lateHours: totalLateHoursDecimal, // for numeric use in payroll
-    lateHM: totalLateHM,              // formatted hr/min for UI display
     workedDays: attendanceDays,
   }));
 };
@@ -189,8 +134,8 @@ setData((prev) => ({
     paymonth:"",
     workType: "フルタイム",
     joinDate: "",
-    standardDays: 21,
-    workedDays: 20.5,
+    standardDays: 0,
+    workedDays: 0,
     annualLeave: 0,
     casualLeave: 0,
     absentDays: 0,
@@ -200,13 +145,13 @@ setData((prev) => ({
     holidayWorkHours: 0,
     overtimeHours: 0,
     lateHours: 0,
-    basicSalary: 668000,
+    basicSalary: 0,
     permanentEmp: 0,
     pitchAdjust: 0,
-    pitchTransfer: 20000,
-    jobAllowance: 30000,
+    pitchTransfer: 0,
+    jobAllowance: 0,
     directorAllowance: 0,
-    languageAllowance: 100000,
+    languageAllowance: 0,
     ssb: 0,
     incomeTax: 0,
     bonus: 0,
@@ -214,12 +159,7 @@ setData((prev) => ({
     cbRate: 3950,
   });
 
-  /* const handleChange = (e) => {
-    const { name, value } = e.target;
-    setData((p) => ({ ...p, [name]: parseFloat(value) || value }));
-  }; */
-
-  const handleChange = (e) => {
+/*   const handleChange = (e) => {
   const { name, value } = e.target;
   // If value is blank, keep blank
   if (value === "") {
@@ -231,6 +171,37 @@ setData((prev) => ({
       [name]: isNaN(num) ? value : num,
     }));
   }
+}; */
+
+const handleChange = (e) => {
+  const { name, value } = e.target;
+
+  // ✅ Prevent creating "" or undefined keys in state
+  if (!name) return;
+
+  if (value === "") {
+    setData((prev) => ({ ...prev, [name]: "" }));
+  } else {
+    const num = parseFloat(value);
+    setData((prev) => ({
+      ...prev,
+      [name]: isNaN(num) ? value : num,
+    }));
+  }
+};
+
+const sanitizeForFirestore = (obj) => {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return obj;
+
+  const cleaned = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (!k) continue;                 // ✅ drop "" keys
+    if (v === undefined) continue;    // ✅ drop undefined
+    if (Number.isNaN(v)) continue;    // ✅ drop NaN (optional)
+
+    cleaned[k] = sanitizeForFirestore(v);
+  }
+  return cleaned;
 };
 
   const actualHours = data.standardDays * 8;
@@ -380,7 +351,7 @@ setData((prev) => ({
         <div className="form-grid">
           <label>休日出勤時間 <br></br>Holiday Work time<input type="number" name="holidayWorkHours" value={data.holidayWorkHours} onChange={handleChange} /></label>
           <label>残業時間 <br></br>Overtime Hours<input type="number" name="overtimeHours" value={data.overtimeHours} onChange={handleChange} /></label>
-          <label>遅刻・早退・外出 (時間) <br></br>Late/Early Departure/Outing<input value={data.lateHM || "0h 0m"} disabled /></label>
+          <label>遅刻・早退・外出 (時間) <br></br>Late/Early Departure/Outing<input type="number" name="lateHours" value={data.lateHours} onChange={handleChange} /></label>
         </div>
       </section>
 
@@ -398,7 +369,7 @@ setData((prev) => ({
         <div className="form-grid">
           <label>基本給 <br></br>Basic salary<input type="number" name="basicSalary" value={data.basicSalary} onChange={handleChange} /></label>
           <label>正社員付与 <br></br>Permanent employee<input type="number" name="permanentEmp" value={data.permanentEmp} onChange={handleChange} /></label>
-          <label>ピッチ間調整 <input type="number" name="pitchAdjust" value={data.pitchAdjust} onChange={handleChange} /></label>
+         {/*  <label>ピッチ間調整 <input type="number" name="pitchAdjust" value={data.pitchAdjust} onChange={handleChange} /></label> */}
           <label>ピッチ移行調整 <br></br> Pitch adjust<input type="number" name="pitchTransfer" value={data.pitchTransfer} onChange={handleChange} /></label>
           <label>基本給(最新) <br></br>Basic salary (latest)<input value={basicLatest} disabled /></label>
           <label>役職手当 <br></br> Job title allowance<input type="number" name="jobAllowance" value={data.jobAllowance} onChange={handleChange} /></label>
@@ -489,7 +460,7 @@ setData((prev) => ({
   onClick={async () => {
     if (!selectedUserId) return notify("Please select a staff first!");
     try {
-      const payload = {
+      const payload = sanitizeForFirestore({
         ...data,
         userId: selectedUserId,
         actualHours,
@@ -512,7 +483,7 @@ setData((prev) => ({
         usdConversion,
         preferentialTotal,
         createdAt: new Date().toISOString(),
-      };
+      });
       await addDoc(collection(db, "payrollSummary"), payload);
     /*  notify(`✅ Payroll saved for ${usersMap[selectedUserId] || "staff"}`); */
     const label = usersMap[selectedUserId]?.name || usersMap[selectedUserId]?.email || selectedUserId;
