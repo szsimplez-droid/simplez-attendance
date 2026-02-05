@@ -1,12 +1,12 @@
-import path from "path";
-import xlsx from "xlsx";
+const XLSX = require("xlsx");
+const path = require("path");
 
-export default function handler(req, res) {
+module.exports = (req, res) => {
   const filePath = path.join(process.cwd(), "api", "data", "pitch.xlsx");
-  const wb = xlsx.readFile(filePath);
+  const wb = XLSX.readFile(filePath);
   const sheet = wb.Sheets[wb.SheetNames[0]];
-  const rows = xlsx.utils.sheet_to_json(sheet);
+  const rows = XLSX.utils.sheet_to_json(sheet);
 
   const ranks = [...new Set(rows.map(r => String(r.Rank)))];
   res.json(ranks);
-}
+};

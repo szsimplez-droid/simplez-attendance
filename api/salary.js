@@ -1,7 +1,7 @@
-import XLSX from "xlsx";
-import path from "path";
+const XLSX = require("xlsx");
+const path = require("path");
 
-export default function handler(req, res) {
+module.exports = (req, res) => {
   const { rank, pitch } = req.query;
 
   const filePath = path.join(process.cwd(), "api", "data", "pitch.xlsx");
@@ -15,5 +15,5 @@ export default function handler(req, res) {
 
   if (!row) return res.status(404).json({ salary: 0 });
 
-  res.json({ salary: row.BasicSalary });
-}
+  res.json({ salary: Number(row.BasicSalary) });
+};
