@@ -16,4 +16,5 @@ module.exports = (req, res) => {
   if (!row) return res.status(404).json({ salary: 0 });
 
   res.json({ salary: Number(row.BasicSalary) });
+  res.json(rows[0]);
 };
