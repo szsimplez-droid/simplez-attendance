@@ -3022,6 +3022,8 @@ const leaveSummaryUids = Object.keys(usersMap || {})
             <th>ID</th>
             <th>Name</th>
             <th>Dept</th>
+            <th>Rank</th>
+            <th>Pitch</th>
             <th>Designation</th>
             <th>Email</th>
             <th>Action</th>
@@ -3043,6 +3045,8 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                 <td>{e.employeeCode || e.eid || "-"}</td>
                 <td>{e.employeeName || e.name || "-"}</td>
                 <td>{e.department || "-"}</td>
+                <td>{e.rank || "-"}</td>
+                <td>{e.pitch || "-"}</td>
                 <td>{e.designation || "-"}</td>
                 <td>{e.email || "-"}</td>
                 <td>
