@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { db } from "./firebase";
 import { collection, addDoc, query, where, getDocs } from "firebase/firestore";
+import { doc, setDoc, getDoc } from "firebase/firestore";
 
 const notify = (text) => {
   const div = document.createElement("div");
