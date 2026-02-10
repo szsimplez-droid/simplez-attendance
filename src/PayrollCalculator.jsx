@@ -343,6 +343,130 @@ const sortedUsers = Object.entries(usersMap)
   .sort(([, a], [, b]) => a.eid.localeCompare(b.eid));
 
 
+  /* When user changes → load their draft */
+  useEffect(() => {
+    if (!selectedUserId) return;
+  
+    const loadDraft = async () => {
+      const ref = doc(db, "payrollDrafts", selectedUserId);
+      const snap = await getDoc(ref);
+  
+      if (snap.exists()) {
+        const d = snap.data();
+  
+        setData(prev => ({ ...prev, ...d }));
+        setRank(d.rank || "");
+        setMonth(d.month || "");
+  
+        // wait for pitch list to load
+        if (d.rank) {
+          const res = await fetch(`http://localhost:4000/api/pitches?rank=${d.rank}`);
+          const list = await res.json();
+          setPitches(list);
+          setPitch(d.pitch || "");
+        }
+  
+      } else {
+    const user = usersMap[selectedUserId] || {};
+    resetForm(user); // pass user so we keep user info + rank/pitch
+  }
+    };
+  
+    loadDraft();
+  }, [selectedUserId]);
+  
+  
+  /* Save draft automatically while typing */
+  useEffect(() => {
+    if (!selectedUserId) return;
+  
+    const saveDraft = async () => {
+      await setDoc(
+        doc(db, "payrollDrafts", selectedUserId),
+        { ...data, rank, pitch, month },
+        { merge: true }
+      );
+    };
+  
+    saveDraft();
+  }, [data, rank, pitch, month, selectedUserId]);
+
+  const resetForm = (user = {}) => {
+  setData({
+    name: user.name || "",
+    userId: selectedUserId || "",
+    languageLevel: user.languageLevel || "",
+    staffId: user.eid || "",
+    staffposition: user.position || "",
+    staffteam: user.team || "",
+    month: "",
+    standardDays: 0,
+    workedDays: 0,
+    annualLeave: 0,
+    casualLeave: 0,
+    absentDays: 0,
+    sickLeave: 0,
+    compLeave: 0,
+    holidayWorkDays: 0,
+    holidayWorkHours: 0,
+    overtimeHours: 0,
+    lateHours: 0,
+    basicSalary: 0,
+    permanentEmp: 0,
+    pitchAdjust: 0,
+    pitchTransfer: 0,
+    jobAllowance: 0,
+    directorAllowance: 0,
+    languageAllowance: 0,
+    ssb: 0,
+    incomeTax: 0,
+    bonus: 0,
+    centralRate: 2100,
+    cbRate: 3950,
+  });
+
+  const userRank = user.rank || "";
+  const userPitch = user.pitch || "";
+
+  setRank(userRank);
+  setPitch(""); // set after pitches loaded
+  setMonth("");
+
+  // load pitch list then set pitch
+  if (userRank) {
+    fetch(`http://localhost:4000/api/pitches?rank=${userRank}`)
+      .then((r) => r.json())
+      .then((list) => {
+        setPitches(list);
+        setPitch(list.includes(userPitch) ? userPitch : "");
+      });
+  } else {
+    setPitches([]);
+  }
+};
+
+const handlePickUser = async (uid) => {
+  const u = usersMap[uid] || {};
+
+  const userRank = u.rank || "";
+  const userPitch = u.pitch ? String(u.pitch) : "";
+
+  setRank(userRank);
+
+  if (userRank) {
+    const r = await fetch(`http://localhost:4000/api/pitches?rank=${userRank}`);
+    const list = await r.json();
+    setPitches(list);
+
+    // only set pitch after pitches are loaded
+    setPitch(list.includes(userPitch) ? userPitch : "");
+  } else {
+    setPitches([]);
+    setPitch("");
+  }
+};
+
+
 
   return (
     <div className="payroll-form">
@@ -358,6 +482,7 @@ const sortedUsers = Object.entries(usersMap)
             const user = usersMap[uid];
 
             setSelectedUserId(uid);
+             handlePickUser(uid);
 
             setData(prev => ({
               ...prev,

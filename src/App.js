@@ -149,7 +149,8 @@ export default function App() {
     department: "",
     designation: "",
     leaderId: "",
-    grade: "",
+    rank:"",
+    pitch:"",
     email: "",
     doe: "",
     employmentType: "",
@@ -195,7 +196,8 @@ const openEmployeeForEdit = (emp) => {
     gender: emp.gender || "",
     department: emp.department || "",
     designation: emp.designation || "",
-    grade: emp.grade || "",
+    rank: emp.rank || "",
+    pitch: emp.pitch || "",
     email: emp.email || "",
     doe: emp.doe || emp.joinDate || "",
     employmentType: emp.employmentType || "",
@@ -1640,7 +1642,59 @@ const adminDeleteMonthAttendance = async () => {
   }
 };
 
+//show leave name and type in all staff attendance table
+const LEAVE_TYPE_ABBR = {
+  "annual leave": "AL",
+  "casual leave": "CL",
+  "medical leave": "MeL",
+  "maternity leave": "MaL",
+  "unpaid leave": "WL",
+  "without pay leave": "WL",
+};
 
+
+const getLeaveDayAbbr = (leave) => {
+  // try many possible field names (use whichever exists in your leave docs)
+  const raw =
+    leave.dayType ??
+    leave.leaveType ??
+    leave.leaveTime ??
+    leave.duration ??
+    leave.session ??
+    leave.type ??
+    "Full Day";
+
+  const t = String(raw).trim().toLowerCase().replace(/\s+/g, " ");
+
+  // morning half
+  if (t.includes("morning")) return "AML";
+
+  // evening / afternoon half
+  if (t.includes("evening") || t.includes("afternoon")) return "PML";
+
+  // full day (default)
+  return "FL";
+};
+
+const getLeaveAbbreviationForDate = (userId, date) => {
+  const leave = allLeaves.find((l) => {
+    if (l.userId !== userId) return false;
+    if (l.status !== "approved") return false;
+
+    const d = new Date(date);
+    const start = new Date(l.startDate);
+    const end = new Date(l.endDate);
+
+    return d >= start && d <= end;
+  });
+
+  if (!leave) return "";
+
+  const typeAbbr = LEAVE_TYPE_ABBR[(leave.leaveName || "").toLowerCase().trim()] || "";
+  const dayAbbr = getLeaveDayAbbr(leave);
+
+  return `${dayAbbr}/${typeAbbr}`;
+};
 
 
 
@@ -3052,10 +3106,15 @@ const leaveSummaryUids = Object.keys(usersMap || {})
           onChange={(e) => setEmployeeForm({ ...employeeForm, designation: e.target.value })}
         />
 
+       <input
+          placeholder="Rank"
+          value={employeeForm.rank}
+          onChange={(e) => setEmployeeForm({ ...employeeForm, rank: e.target.value })}
+        />
         <input
-          placeholder="Grade"
-          value={employeeForm.grade}
-          onChange={(e) => setEmployeeForm({ ...employeeForm, grade: e.target.value })}
+          placeholder="Pitch"
+          value={employeeForm.pitch}
+          onChange={(e) => setEmployeeForm({ ...employeeForm, pitch: e.target.value })}
         />
 
         {/* For edit mode, show Firestore email (profile) */}
@@ -3133,41 +3192,8 @@ const leaveSummaryUids = Object.keys(usersMap || {})
           <option value="Divorced">Divorced</option>
           <option value="Widowed">Widowed</option>
         </select>
-        
-        
-        {/* ✅ Only show LOGIN EMAIL + TEMP PASSWORD when creating */}
-        {!selectedEmpId && (
-          <>
-           <label style={{ marginBottom: "10px" }}>Login Email </label>
-            <input
-              type="email"
-              placeholder="Login Email"
-              value={loginEmail}
-              onChange={(e) => setLoginEmail(e.target.value)}
-              autoComplete="off"
-              name="new-login-email"
-            />
 
-            <label style={{ marginBottom: "10px" }}>Temporary Password </label>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                style={{ flex: 1 }}
-                type={showTempPw ? "text" : "password"}
-                placeholder="Temporary Password"
-                value={tempPassword}
-                onChange={(e) => setTempPassword(e.target.value)}
-                autoComplete="new-password"
-                name="new-temp-password"
-              />
-              <button type="button" className="btn small" onClick={() => setShowTempPw(v => !v)}>
-                {showTempPw ? "Hide" : "Show"}
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-
-      <div style={{ position: "relative" }}>
+         <div style={{ position: "relative" }}>
       <label style={{ marginBottom: "10px" }}>Type leader name... </label>
       <input
       placeholder="Type leader name..."
@@ -3232,6 +3258,41 @@ const leaveSummaryUids = Object.keys(usersMap || {})
     </div>
   )}
 </div>
+        
+        
+        {/* ✅ Only show LOGIN EMAIL + TEMP PASSWORD when creating */}
+        {!selectedEmpId && (
+          <>
+           <label style={{ marginBottom: "10px" }}>Login Email </label>
+            <input
+              type="email"
+              placeholder="Login Email"
+              value={loginEmail}
+              onChange={(e) => setLoginEmail(e.target.value)}
+              autoComplete="off"
+              name="new-login-email"
+            />
+
+            <label style={{ marginBottom: "10px" }}>Temporary Password </label>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                style={{ flex: 1 }}
+                type={showTempPw ? "text" : "password"}
+                placeholder="Temporary Password"
+                value={tempPassword}
+                onChange={(e) => setTempPassword(e.target.value)}
+                autoComplete="new-password"
+                name="new-temp-password"
+              />
+              <button type="button" className="btn small" onClick={() => setShowTempPw(v => !v)}>
+                {showTempPw ? "Hide" : "Show"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+
+     
 
      <div style={{ display: "flex", gap: 10, marginTop: 16, justifyContent: "flex-end" }}>
         <button
@@ -3556,6 +3617,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
               <tr>
                 <th>ID</th>
                 <th>User</th>
+                <th>Leave</th>
                 <th>Date</th>
                 <th>In</th>
                 <th>Out</th>
@@ -3572,6 +3634,9 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                       {/* <td>{usersMap[a.userId] || a.userId}</td> */}
                        <td style={{ fontWeight: 700 }}>{getEid(a.userId) || "-"}</td>
                        <td>{usersMap[a.userId]?.name || usersMap[a.userId]?.email || a.userId}</td>
+                        <td style={{ fontWeight: 700, color: "#d97706" }}>
+                        {getLeaveAbbreviationForDate(a.userId, a.date) || "—"}
+                      </td>
                       <td>{a.date}</td>
                       <td>{toMyanmarTime(a.clockIn)}</td>
                       <td>{toMyanmarTime(a.clockOut)}</td>
