@@ -345,7 +345,7 @@ const sortedUsers = Object.entries(usersMap)
 
 
   /* When user changes → load their draft */
-  useEffect(() => {
+/*   useEffect(() => {
     if (!selectedUserId) return;
   
     const loadDraft = async () => {
@@ -374,7 +374,7 @@ const sortedUsers = Object.entries(usersMap)
     };
   
     loadDraft();
-  }, [selectedUserId]);
+  }, [selectedUserId]); */
   
   
   /* Save draft automatically while typing */
@@ -435,7 +435,7 @@ const sortedUsers = Object.entries(usersMap)
 
   // load pitch list then set pitch
   if (userRank) {
-    fetch(`http://localhost:4000/api/pitches?rank=${userRank}`)
+    fetch(`api/pitches?rank=${userRank}`)
       .then((r) => r.json())
       .then((list) => {
         setPitches(list);
@@ -455,7 +455,7 @@ const handlePickUser = async (uid) => {
   setRank(userRank);
 
   if (userRank) {
-    const r = await fetch(`http://localhost:4000/api/pitches?rank=${userRank}`);
+    const r = await fetch(`api/pitches?rank=${userRank}`);
     const list = await r.json();
     setPitches(list);
 
