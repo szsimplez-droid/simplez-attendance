@@ -37,7 +37,7 @@ body {
 .sidebar button {
   background: #334155;
   border: none;
-  padding: 12px;
+  padding: 12px 6px;
   border-radius: 8px;
   margin: 10px 0 5px;
   text-align: left;

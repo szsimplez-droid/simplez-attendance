@@ -2439,7 +2439,9 @@ const leaveSummaryUids = Object.keys(usersMap || {})
       <>
         <hr />
         <div className="sidebar-section-title">Admin Management</div>
-        <button className="nav-item" onClick={() => { setActiveSidebar("admin-employee-form"); setSidebarOpen(false); }}><span className="icon">🧾</span> Employee Form</button>
+       {canAccessPayroll && (
+        <button className="nav-item" onClick={() => { setActiveSidebar("admin-employee-form"); setSidebarOpen(false); }}><span className="icon">🧾</span> Employee Information</button>
+         )}
         <button  className="nav-item" onClick={() => {setActiveSidebar("admin-employee");setSidebarOpen(false);}}><span className="icon">👥</span> Employee List</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-att");setSidebarOpen(false);}}><span className="icon">📊</span> All Attendance</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-att-summary");setSidebarOpen(false);}}><span className="icon">📊</span> Monthly Attendance Summary</button>
@@ -2996,7 +2998,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
  
            
       {/* Admin Employee Management */}
-      {isAdmin && activeSidebar === "admin-employee-form" && (
+      {canAccessPayroll && isAdmin && activeSidebar === "admin-employee-form" && (
     <section className="card">
     <h2>Employee Information</h2>
 
