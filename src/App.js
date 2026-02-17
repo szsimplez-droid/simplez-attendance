@@ -1702,6 +1702,97 @@ const getLeaveAbbreviationForDate = (userId, date) => {
 const [editingLeaderAttendance, setEditingLeaderAttendance] = useState(null);
 const [leaderEditIn, setLeaderEditIn] = useState("");
 const [leaderEditOut, setLeaderEditOut] = useState("");
+const [nameFilter, setNameFilter] = useState("");
+const [dateFilter, setDateFilter] = useState("");
+const [fromDate, setFromDate] = useState("");
+const [toDate, setToDate] = useState("");
+
+const resetFilters = () => {
+  setNameFilter("");
+  setDateFilter("");
+  setFromDate("");
+  setToDate("");
+};
+
+const safe = (v) => (v || "").toString().toLowerCase();
+
+const filteredMemberAttendance = leaderAttendance.filter(row => {
+  const name = usersMap[row.userId]?.name;   // real source
+  const matchName = safe(name).includes(safe(nameFilter));
+
+  const matchDate =
+    dateFilter === "" || row.date === dateFilter;
+
+  return matchName && matchDate;
+});
+
+const filteredMemberLeaves = leaderLeaves.filter(row => {
+  // ---------- Name filter ----------
+  const name = usersMap[row.userId]?.name;
+  const matchName = safe(name).includes(safe(nameFilter));
+
+  // ---------- Date range filter ----------
+  if (!fromDate && !toDate) return matchName;
+
+  const rowStart = new Date(row.startDate);
+  const rowEnd = new Date(row.endDate);
+  const filterFrom = fromDate ? new Date(fromDate) : null;
+  const filterTo = toDate ? new Date(toDate) : null;
+
+  // overlap logic
+  if (filterFrom && rowEnd < filterFrom) return false;
+  if (filterTo && rowStart > filterTo) return false;
+
+  return matchName;
+});
+
+
+const filteredMemberOT = leaderOvertime.filter(row => {
+  const name = usersMap[row.userId]?.name;
+  const matchName = safe(name).includes(safe(nameFilter));
+
+  const matchDate =
+    dateFilter === "" || row.date === dateFilter;
+
+  return matchName && matchDate;
+});
+
+const filteredAllMemberLeaves = allLeaves.filter(row => {
+  // ---------- Name filter ----------
+  const name = usersMap[row.userId]?.name;
+  const matchName = safe(name).includes(safe(nameFilter));
+
+  // ---------- Date range filter ----------
+  if (!fromDate && !toDate) return matchName;
+
+  const rowStart = new Date(row.startDate);
+  const rowEnd = new Date(row.endDate);
+  const filterFrom = fromDate ? new Date(fromDate) : null;
+  const filterTo = toDate ? new Date(toDate) : null;
+
+  // overlap logic
+  if (filterFrom && rowEnd < filterFrom) return false;
+  if (filterTo && rowStart > filterTo) return false;
+
+  return matchName;
+});
+
+useEffect(() => {
+  const today = new Date().toISOString().slice(0, 10);
+  setFromDate(today);
+  setToDate(today);
+}, []);
+
+
+const filteredAllMemberOT = allOvertime.filter(row => {
+  const name = usersMap[row.userId]?.name;
+  const matchName = safe(name).includes(safe(nameFilter));
+
+  const matchDate =
+    dateFilter === "" || row.date === dateFilter;
+
+  return matchName && matchDate;
+});
 
 const leaderUpdateAttendanceTime = async () => {
   if (!editingLeaderAttendance) return;
@@ -2429,11 +2520,19 @@ const leaveSummaryUids = Object.keys(usersMap || {})
   <button className="nav-item" onClick={() => { setActiveSidebar("my-payslip");setSidebarOpen(false);}}> <span className="icon"> 🧾</span> My Payslip</button> 
 
       {isLeader && (
-      <button className="nav-item" onClick={() => {setActiveSidebar("leader-panel"); setSidebarOpen(false);}}>
-        <span className="icon">👥</span> Leader Dashboard
+      <>
+      <div className="sidebar-section-title">Leader Dashboard</div>
+      <button className="nav-item" onClick={() => {setActiveSidebar("member-att-panel"); setSidebarOpen(false);}}>
+        <span className="icon">👥</span> Members Attendance
       </button>
+      <button className="nav-item" onClick={() => {setActiveSidebar("member-leave-panel"); setSidebarOpen(false);}}>
+        <span className="icon">👥</span> Members Leave Requests
+      </button>
+      <button className="nav-item" onClick={() => {setActiveSidebar("member-ot-panel"); setSidebarOpen(false);}}>
+        <span className="icon">👥</span> Members OT Requests
+      </button>
+    </>
     )}
-
 
     {isAdmin &&  (
       <>
@@ -2490,7 +2589,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
         {/* My Panel (clock, save location, personal lists) */}
         {activeSidebar === "my-panel" && (
           <section className="card">
-            <h2>My Controls</h2>
+            <h2>My Attendance</h2>
             <div style={{display:"flex", gap:12, alignItems:"center", flexWrap:"wrap"}}>
               <button className="btn in" onClick={clockIn}>Clock In</button>
               <button className="btn out" onClick={clockOut}>Clock Out</button>
@@ -2843,101 +2942,48 @@ const leaveSummaryUids = Object.keys(usersMap || {})
       )}
 
       {/* LEADER SECTION */}
-    {isLeader  && activeSidebar === "leader-panel" && (
+    {isLeader  && activeSidebar === "member-att-panel" && (
    <section className="card">
   <div className="section admin">
-    <h2>Leader Dashboard</h2>
-
-    <h3>My Members Leave Requests</h3>
-    <table className="data-table">
-      <thead>
-        <tr>
-          <th>User</th><th>Start</th><th>End</th><th>Type</th><th>Reason</th><th>Status</th><th>Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        {leaderLeaves.length === 0 ? (
-          <tr><td colSpan="7">No leave requests</td></tr>
-        ) : (
-          leaderLeaves.map((lv) => (
-            <tr key={lv.id}>
-              <td>{displayUser(lv.userId)}</td>
-              <td>{lv.startDate}</td>
-              <td>{lv.endDate}</td>
-              <td>{lv.leaveType}</td>
-              <td>{lv.reason}</td>
-              <td>{colorStatus(lv.status)}</td>
-              <td>
-                <button
-                  className="btn small"
-                  onClick={() => leaderUpdateLeaveStatus(lv.id, "approved", lv.userId)}
-                >✅</button>
-                <button
-                  className="btn small red"
-                  onClick={() => leaderUpdateLeaveStatus(lv.id, "rejected", lv.userId)}
-                >❌</button>
-              </td>
-            </tr>
-          ))
-        )}
-      </tbody>
-    </table>
-
-    <h3>My Members Overtime Requests</h3>
-    <table className="data-table">
-      <thead>
-        <tr>
-          <th>User</th><th>Date</th><th>Time</th><th>Total</th><th>Reason</th><th>Status</th><th>Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        {leaderOvertime.length === 0 ? (
-          <tr><td colSpan="7">No overtime requests</td></tr>
-        ) : (
-          leaderOvertime.map((ot) => (
-            <tr key={ot.id}>
-              <td>{displayUser(ot.userId)}</td>
-              <td>{ot.date}</td>
-              <td>{ot.startTime} - {ot.endTime}</td>
-              <td>{ot.totalTime}</td>
-              <td>{ot.reason}</td>
-              <td>{colorStatus(ot.status)}</td>
-              <td>
-                <button
-                  className="btn small"
-                  onClick={() => leaderUpdateOvertimeStatus(ot.id, "approved", ot.userId)}
-                >✅</button>
-                <button
-                  className="btn small red"
-                  onClick={() => leaderUpdateOvertimeStatus(ot.id, "rejected", ot.userId)}
-                >❌</button>
-              </td>
-            </tr>
-          ))
-        )}
-      </tbody>
-    </table>
-
     <h2>My Members Attendance</h2>
+      
+    <div className="filters" style={{ display: "flex", gap: 10, alignItems: "self-start", marginBottom: 12 }}>
+      <input
+        type="text"
+        placeholder="Search by name"
+        value={nameFilter}
+        onChange={(e) => setNameFilter(e.target.value)}
+        style={{ flex: 1 }}
+      />
+
+      <input
+        type="date"
+        value={dateFilter}
+        onChange={(e) => setDateFilter(e.target.value)}
+      />
+      <button className="btn" onClick={resetFilters}>Reset</button>
+    </div>
+
+
     <table className="data-table">
       <thead><tr><th>User</th><th>Date</th><th>Clock In</th><th>Clock Out</th><th>In Loc</th><th>Out Loc</th><th>Action</th></tr></thead>
       <tbody>
-        {leaderAttendance.length === 0 ? <tr><td colSpan="5">No records</td></tr> :
-          leaderAttendance.map((a) => (
-            <tr key={a.id}>
-              <td>{displayUser(a.userId)}</td>
-              <td>{a.date}</td>
-              <td>{toMyanmarTime(a.clockIn)}</td>
-              <td>{toMyanmarTime(a.clockOut)}</td>
-              <td>{a.locationIn ? <a target="_blank" rel="noreferrer" href={`https://maps.google.com/?q=${a.locationIn.latitude},${a.locationIn.longitude}`}>📍 View</a> : "-"}</td>
-              <td>{a.locationOut ? <a target="_blank" rel="noreferrer" href={`https://maps.google.com/?q=${a.locationOut.latitude},${a.locationOut.longitude}`}>📍 View</a> : "-"}</td>
+        {filteredMemberAttendance.length === 0 ? <tr><td colSpan="5">No records</td></tr> :
+          filteredMemberAttendance.map((at, i) => (
+            <tr key={at.id}>
+              <td>{displayUser(at.userId)}</td>
+              <td>{at.date}</td>
+              <td>{toMyanmarTime(at.clockIn)}</td>
+              <td>{toMyanmarTime(at.clockOut)}</td>
+              <td>{at.locationIn ? <a target="_blank" rel="noreferrer" href={`https://maps.google.com/?q=${at.locationIn.latitude},${at.locationIn.longitude}`}>📍 View</a> : "-"}</td>
+              <td>{at.locationOut ? <a target="_blank" rel="noreferrer" href={`https://maps.google.com/?q=${at.locationOut.latitude},${at}`}>📍 View</a> : "-"}</td>
               <td>
               <button
                 className="btn small blue"
                 onClick={() => {
-                  setEditingLeaderAttendance(a);
-                  setLeaderEditIn(a.clockInTime || "");
-                  setLeaderEditOut(a.clockOutTime || "");
+                  setEditingLeaderAttendance(at);
+                  setLeaderEditIn(at.clockInTime || "");
+                  setLeaderEditOut(at.clockOutTime || "");
                 }}
               >
                 ✏ Edit
@@ -2995,6 +3041,133 @@ const leaveSummaryUids = Object.keys(usersMap || {})
   </div>
   </section>
 )}
+
+    {isLeader  && activeSidebar === "member-leave-panel" && (
+   <section className="card">
+  <div className="section admin">
+    <h2>My Members Leave Requests</h2>
+
+     <div className="filters" style={{ display: "flex", gap: 10, alignItems: "self-start", marginBottom: 12 }}>
+              <input
+                type="text"
+                placeholder="Search by name"
+                value={nameFilter}
+                onChange={(e) => setNameFilter(e.target.value)}
+                style={{ flex: 1 }}
+              />
+              <div style={{ display: "flex", gap: 10, alignItems: "baseline", marginBottom: 12 }}>
+               <label>Start Date</label>
+             <input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+              />
+               <label>End Date</label>
+              <input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+              />
+              </div>
+
+              <button className="btn" onClick={resetFilters}>Reset</button>
+            </div>
+    
+    <table className="data-table">
+      <thead>
+        <tr>
+          <th>User</th><th>Start</th><th>End</th><th>Type</th><th>Reason</th><th>Status</th><th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {filteredMemberLeaves.length === 0 ? (
+          <tr><td colSpan="7">No leave requests</td></tr>
+        ) : (
+          filteredMemberLeaves.map((lv) => (
+            <tr key={lv.id}>
+              <td>{displayUser(lv.userId)}</td>
+              <td>{lv.startDate}</td>
+              <td>{lv.endDate}</td>
+              <td>{lv.leaveType}</td>
+              <td>{lv.reason}</td>
+              <td>{colorStatus(lv.status)}</td>
+              <td>
+                <button
+                  className="btn small"
+                  onClick={() => leaderUpdateLeaveStatus(lv.id, "approved", lv.userId)}
+                >✅</button>
+                <button
+                  className="btn small red"
+                  onClick={() => leaderUpdateLeaveStatus(lv.id, "rejected", lv.userId)}
+                >❌</button>
+              </td>
+            </tr>
+          ))
+        )}
+      </tbody>
+    </table>
+     </div>
+  </section>
+)}
+
+     {isLeader  && activeSidebar === "member-ot-panel" && (
+   <section className="card">
+  <div className="section admin">
+    <h2>My Members Overtime Requests</h2>
+
+    <div className="filters" style={{ display: "flex", gap: 10, alignItems: "self-start", marginBottom: 12 }}>
+      <input
+        type="text"
+        placeholder="Search by name"
+        value={nameFilter}
+        onChange={(e) => setNameFilter(e.target.value)}
+        style={{ flex: 1 }}
+      />
+
+      <input
+        type="date"
+        value={dateFilter}
+        onChange={(e) => setDateFilter(e.target.value)}
+      />
+      <button className="btn" onClick={resetFilters}>Reset</button>
+    </div>
+
+    <table className="data-table">
+      <thead>
+        <tr>
+          <th>User</th><th>Date</th><th>Time</th><th>Total</th><th>Reason</th><th>Status</th><th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {filteredMemberOT.length === 0 ? (
+          <tr><td colSpan="7">No overtime requests</td></tr>
+        ) : (
+          filteredMemberOT.map((ot) => (
+            <tr key={ot.id}>
+              <td>{displayUser(ot.userId)}</td>
+              <td>{ot.date}</td>
+              <td>{ot.startTime} - {ot.endTime}</td>
+              <td>{ot.totalTime}</td>
+              <td>{ot.reason}</td>
+              <td>{colorStatus(ot.status)}</td>
+              <td>
+                <button
+                  className="btn small"
+                  onClick={() => leaderUpdateOvertimeStatus(ot.id, "approved", ot.userId)}
+                >✅</button>
+                <button
+                  className="btn small red"
+                  onClick={() => leaderUpdateOvertimeStatus(ot.id, "rejected", ot.userId)}
+                >❌</button>
+              </td>
+            </tr>
+          ))
+        )}
+      </tbody>
+    </table>
+     </div>
+  </section>
+)}
  
            
       {/* Admin Employee Management */}
@@ -3033,7 +3206,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
         </thead>
         <tbody>
           {filteredEmployees.length === 0 ? (
-            <tr><td colSpan="5">No employees found</td></tr>
+            <tr><td colSpan="8">No employees found</td></tr>
           ) : (
             filteredEmployees.map((e) => (
               <tr
@@ -3856,11 +4029,38 @@ const leaveSummaryUids = Object.keys(usersMap || {})
         {isAdmin && activeSidebar==="admin-leave" && (
           <section className="card">
             <h2>All Leave Requests</h2>
+
+            <div className="filters" style={{ display: "flex", gap: 10, alignItems: "self-start", marginBottom: 12 }}>
+              <input
+                type="text"
+                placeholder="Search by name"
+                value={nameFilter}
+                onChange={(e) => setNameFilter(e.target.value)}
+                style={{ flex: 1 }}
+              />
+              <div style={{ display: "flex", gap: 10, alignItems: "baseline", marginBottom: 12 }}>
+               <label>Start Date</label>
+             <input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+              />
+               <label>End Date</label>
+              <input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+              />
+              </div>
+
+              <button className="btn" onClick={resetFilters}>Reset</button>
+            </div>
+            
             <table className="data-table">
               <thead><tr><th>User</th><th>Start</th><th>End</th><th>LeaveType</th><th>LeaveName</th><th>Reason</th><th>Status</th><th>Action</th></tr></thead>
               <tbody>
-                {allLeaves.length===0 ? <tr><td colSpan="7">No leave requests</td></tr> :
-                  allLeaves.map((lv) => (
+                {filteredAllMemberLeaves.length===0 ? <tr><td colSpan="7">No leave requests</td></tr> :
+                  filteredAllMemberLeaves.map((lv) => (
                     <tr key={lv.id}>
                      {/*  <td>{usersMap[lv.userId] || lv.userId}</td> */}
                      <td>{displayUser(lv.userId)}</td>
@@ -4274,11 +4474,29 @@ const leaveSummaryUids = Object.keys(usersMap || {})
         {isAdmin && activeSidebar==="admin-ot" && (
           <section className="card">
             <h2>All Overtime Requests</h2>
+
+             <div className="filters" style={{ display: "flex", gap: 10, alignItems: "self-start", marginBottom: 12 }}>
+                <input
+                  type="text"
+                  placeholder="Search by name"
+                  value={nameFilter}
+                  onChange={(e) => setNameFilter(e.target.value)}
+                  style={{ flex: 1 }}
+                />
+
+                <input
+                  type="date"
+                  value={dateFilter}
+                  onChange={(e) => setDateFilter(e.target.value)}
+                />
+                <button className="btn" onClick={resetFilters}>Reset</button>
+              </div>
+
             <table className="data-table">
               <thead><tr><th>User</th><th>Date</th><th>Time</th><th>Total</th><th>Reason</th><th>Status</th><th>Action</th></tr></thead>
               <tbody>
-                {allOvertime.length===0 ? <tr><td colSpan="7">No OT requests</td></tr> :
-                  allOvertime.map((ot) => (
+                {filteredAllMemberOT.length===0 ? <tr><td colSpan="7">No OT requests</td></tr> :
+                  filteredAllMemberOT.map((ot) => (
                     <tr key={ot.id}>
                       {/* <td>{usersMap[ot.userId] || ot.userId}</td> */}
                       <td>{displayUser(ot.userId)}</td>
