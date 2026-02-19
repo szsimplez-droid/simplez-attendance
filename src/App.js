@@ -18,6 +18,7 @@ import {
   query,
   where,
   updateDoc,
+  runTransaction,
   doc,
   getDoc,
   deleteDoc,
@@ -1707,11 +1708,24 @@ const [dateFilter, setDateFilter] = useState("");
 const [fromDate, setFromDate] = useState("");
 const [toDate, setToDate] = useState("");
 
+// Admin filters: show approved/rejected (pending is default)
+const [showApprovedLeave, setShowApprovedLeave] = useState(false);
+const [showRejectedLeave, setShowRejectedLeave] = useState(false);
+
+const [showApprovedOT, setShowApprovedOT] = useState(false);
+const [showRejectedOT, setShowRejectedOT] = useState(false);
+
 const resetFilters = () => {
   setNameFilter("");
   setDateFilter("");
   setFromDate("");
   setToDate("");
+
+  // reset status checkboxes
+  setShowApprovedLeave(false);
+  setShowRejectedLeave(false);
+  setShowApprovedOT(false);
+  setShowRejectedOT(false);
 };
 
 const safe = (v) => (v || "").toString().toLowerCase();
@@ -1757,7 +1771,7 @@ const filteredMemberOT = leaderOvertime.filter(row => {
   return matchName && matchDate;
 });
 
-const filteredAllMemberLeaves = allLeaves.filter(row => {
+/* const filteredAllMemberLeaves = allLeaves.filter(row => {
   // ---------- Name filter ----------
   const name = usersMap[row.userId]?.name;
   const matchName = safe(name).includes(safe(nameFilter));
@@ -1775,6 +1789,34 @@ const filteredAllMemberLeaves = allLeaves.filter(row => {
   if (filterTo && rowStart > filterTo) return false;
 
   return matchName;
+}); */
+
+const filteredAllMemberLeaves = allLeaves.filter((row) => {
+  const name = usersMap[row.userId]?.name;
+  const matchName = safe(name).includes(safe(nameFilter));
+
+  // ---------- Date range overlap ----------
+  const rowStart = new Date(row.startDate);
+  const rowEnd = new Date(row.endDate);
+  const filterFrom = fromDate ? new Date(fromDate) : null;
+  const filterTo = toDate ? new Date(toDate) : null;
+
+  if (filterFrom && rowEnd < filterFrom) return false;
+  if (filterTo && rowStart > filterTo) return false;
+
+  // ---------- Status filter ----------
+  const s = (row.status || "pending").toLowerCase();
+
+  // Default table shows only "pending-like"
+  // If you have 2-step approval, admin pending list should include "leader_approved" too.
+  const allowed = new Set(["pending", "leader_approved"]);
+
+  if (showApprovedLeave) allowed.add("approved");
+  if (showRejectedLeave) allowed.add("rejected");
+
+  const matchStatus = allowed.has(s);
+
+  return matchName && matchStatus;
 });
 
 useEffect(() => {
@@ -1784,7 +1826,7 @@ useEffect(() => {
 }, []);
 
 
-const filteredAllMemberOT = allOvertime.filter(row => {
+/* const filteredAllMemberOT = allOvertime.filter(row => {
   const name = usersMap[row.userId]?.name;
   const matchName = safe(name).includes(safe(nameFilter));
 
@@ -1792,6 +1834,21 @@ const filteredAllMemberOT = allOvertime.filter(row => {
     dateFilter === "" || row.date === dateFilter;
 
   return matchName && matchDate;
+}); */
+
+const filteredAllMemberOT = allOvertime.filter((row) => {
+  const name = usersMap[row.userId]?.name;
+  const matchName = safe(name).includes(safe(nameFilter));
+
+  const matchDate = dateFilter === "" || row.date === dateFilter;
+
+  const s = (row.status || "pending").toLowerCase();
+
+  const allowed = new Set(["pending"]);
+  if (showApprovedOT) allowed.add("approved");
+  if (showRejectedOT) allowed.add("rejected");
+
+  return matchName && matchDate && allowed.has(s);
 });
 
 const leaderUpdateAttendanceTime = async () => {
@@ -1958,7 +2015,7 @@ const leaderUpdateAttendanceTime = async () => {
   /* ---------------- leave & overtime (staff) ---------------- */
   const applyLeave = async () => {
     if (!leaveStart || !leaveEnd || !leaveReason) return notify("Please fill leave start, end and reason.");
-    await addDoc(collection(db, "leaves"), {
+    /* await addDoc(collection(db, "leaves"), {
       userId: user.uid,
       startDate: leaveStart,
       endDate: leaveEnd,
@@ -1967,7 +2024,28 @@ const leaderUpdateAttendanceTime = async () => {
       reason: leaveReason,
       status: "pending",
       createdAt: new Date().toISOString(),
+    }); */
+    await addDoc(collection(db, "leaves"), {
+          userId: user.uid,
+          startDate: leaveStart,
+          endDate: leaveEnd,
+          leaveType,
+          leaveName,
+          reason: leaveReason,
+    
+          // 2-step workflow
+          status: "pending",          // display status
+          leaderStatus: "pending",
+          adminStatus: "pending",
+    
+          leaderActionBy: null,
+          leaderActionAt: null,
+          adminActionBy: null,
+          adminActionAt: null,
+    
+          createdAt: new Date().toISOString(),
     });
+
     setLeaveStart(""); setLeaveEnd(""); setLeaveReason("");
     notify("✅ Leave request submitted.");
     loadLeaves(user.uid);
@@ -1998,7 +2076,7 @@ const leaderUpdateAttendanceTime = async () => {
     if (isAdmin) loadAllOvertime();
   };
 
-  const updateLeaveStatus = async (id, status) => {
+  /* const updateLeaveStatus = async (id, status) => {
     await updateDoc(doc(db, "leaves", id), { status });
     notify(`Leave ${status}`);
     loadAllLeaves();
@@ -2008,8 +2086,17 @@ const leaderUpdateAttendanceTime = async () => {
     await updateDoc(doc(db, "overtimeRequests", id), { status });
     notify(`Overtime ${status}`);
     loadAllOvertime();
+  }; */
+    const updateOvertimeStatus = async (id, status) => {
+    await updateDoc(doc(db, "overtimeRequests", id), {
+      status,
+      actionBy: user.uid,
+      actionAt: new Date().toISOString(),
+    });
+    notify(`Overtime ${status}`);
+    loadAllOvertime();
   };
-
+/* 
   const leaderUpdateLeaveStatus = async (leaveDocId, status, memberUserId) => {
   if (!leaderMembers.includes(memberUserId)) {
     return notify("🚫 You cannot approve non-member leave.");
@@ -2017,15 +2104,251 @@ const leaderUpdateAttendanceTime = async () => {
   await updateLeaveStatus(leaveDocId, status);
   // refresh leader list only
   await loadLeaderLeaves(leaderMembers);
+}; */
+
+const leaderUpdateLeaveStatus = async (leaveDocId, decision, memberUserId) => {
+  if (!leaderMembers.includes(memberUserId)) {
+    return notify("🚫 You cannot approve non-member leave.");
+  }
+
+  const payload = {
+    leaderStatus: decision,
+    leaderActionBy: user.uid,
+    leaderActionAt: new Date().toISOString(),
+  };
+
+  // if leader rejects -> final reject
+  if (decision === "rejected") {
+    payload.status = "rejected";
+    payload.adminStatus = "rejected"; // optional: lock admin step
+  }
+
+  // if leader approves -> waiting admin
+  if (decision === "approved") {
+    payload.status = "leader_approved";
+  }
+
+  await updateDoc(doc(db, "leaves", leaveDocId), payload);
+
+  notify(`Leader ${decision}`);
+  await loadLeaderLeaves(leaderMembers);
+  if (isAdmin) await loadAllLeaves();
 };
 
-  const leaderUpdateOvertimeStatus = async (otDocId, status, memberUserId) => {
+const getLeaveYear = (leave) => new Date(leave.startDate).getFullYear();
+
+const adminUpdateLeaveStatus = async (leaveId, decision, leaveRow) => {
+  const leaderOk =
+    leaveRow?.leaderStatus === "approved" ||
+    leaveRow?.status === "leader_approved" ||
+    leaveRow?.status === "approved" ||
+    leaveRow?.status === "rejected";
+
+  if (!leaderOk) return notify("⛔ Leader must approve first.");
+
+  // for UI refresh (avoid only using currentYear)
+  const yearForReload = leaveRow?.startDate
+    ? new Date(leaveRow.startDate).getFullYear()
+    : currentYear;
+
+  try {
+    await runTransaction(db, async (tx) => {
+      const leaveRef = doc(db, "leaves", leaveId);
+      const leaveSnap = await tx.get(leaveRef);
+      if (!leaveSnap.exists()) throw new Error("Leave not found");
+
+      const leave = { id: leaveSnap.id, ...leaveSnap.data() };
+
+      const prevStatus = String(leave.status || "pending").toLowerCase();
+      const nextStatus = String(decision).toLowerCase();
+
+      const year = getLeaveYear(leave);
+
+      const adminPayload = {
+        adminStatus: nextStatus,
+        adminActionBy: user.uid,
+        adminActionAt: new Date().toISOString(),
+        status: nextStatus,
+      };
+
+      const units = Number(leave.balanceDeductedUnits ?? calcLeaveUnits(leave));
+      const leaveName = leave.leaveName;
+
+      const balRef = doc(db, "leaveBalances", `${leave.userId}_${year}`);
+      const balSnap = await tx.get(balRef);
+
+      const balData = balSnap.exists() ? balSnap.data() : { balances: {} };
+      const balances = { ...(balData.balances || {}) };
+      const typeObj = { ...(balances[leaveName] || {}) };
+      const prevTaken = Number(typeObj.taken || 0);
+
+      // ✅ robust boolean
+      const wasDeducted = Boolean(leave.balanceDeducted);
+
+      const shouldRefund =
+        prevStatus === "approved" && wasDeducted && nextStatus !== "approved";
+
+      if (shouldRefund) {
+        typeObj.taken = Math.max(0, prevTaken - units);
+        balances[leaveName] = typeObj;
+
+        tx.set(
+          balRef,
+          { userId: leave.userId, year, balances, updatedAt: new Date().toISOString() },
+          { merge: true }
+        );
+
+        tx.update(leaveRef, {
+          ...adminPayload,
+          balanceDeducted: false,
+          balanceRefunded: true,
+          balanceRefundedAt: new Date().toISOString(),
+          balanceRefundedUnits: units,
+        });
+        return;
+      }
+
+      if (nextStatus === "approved") {
+        if (wasDeducted) {
+          tx.update(leaveRef, adminPayload);
+          return;
+        }
+
+        typeObj.taken = prevTaken + units;
+        balances[leaveName] = typeObj;
+
+        tx.set(
+          balRef,
+          { userId: leave.userId, year, balances, updatedAt: new Date().toISOString() },
+          { merge: true }
+        );
+
+        tx.update(leaveRef, {
+          ...adminPayload,
+          balanceDeducted: true,
+          balanceDeductedAt: new Date().toISOString(),
+          balanceDeductedUnits: units,
+          balanceRefunded: false,
+          balanceRefundedAt: null,
+          balanceRefundedUnits: null,
+        });
+        return;
+      }
+
+      tx.update(leaveRef, adminPayload);
+    });
+
+    notify(`✅ Admin ${decision}`);
+    loadAllLeaves();
+    loadLeaveBalances(yearForReload); // ✅ refresh correct year
+  } catch (err) {
+    console.error(err);
+    notify("❌ Approve failed: " + err.message);
+  }
+};
+
+
+const deleteLeaveRequest = async (id, leaveRow) => {
+  try {
+    if (!window.confirm("Delete this leave request?")) return;
+
+    const yearForReload = leaveRow?.startDate
+      ? new Date(leaveRow.startDate).getFullYear()
+      : currentYear;
+
+    await runTransaction(db, async (tx) => {
+      const leaveRef = doc(db, "leaves", id);
+      const leaveSnap = await tx.get(leaveRef);
+      if (!leaveSnap.exists()) return;
+
+      const leave = { id: leaveSnap.id, ...leaveSnap.data() };
+
+      const status = String(leave.status || "").toLowerCase();
+      const year = new Date(leave.startDate).getFullYear();
+      const leaveName = leave.leaveName;
+
+      const wasDeducted = Boolean(leave.balanceDeducted);
+
+      if (status === "approved" && wasDeducted) {
+        const units = Number(leave.balanceDeductedUnits ?? calcLeaveUnits(leave));
+
+        const balRef = doc(db, "leaveBalances", `${leave.userId}_${year}`);
+        const balSnap = await tx.get(balRef);
+
+        const balData = balSnap.exists() ? balSnap.data() : { balances: {} };
+        const balances = { ...(balData.balances || {}) };
+        const typeObj = { ...(balances[leaveName] || {}) };
+        const prevTaken = Number(typeObj.taken || 0);
+
+        typeObj.taken = Math.max(0, prevTaken - units);
+        balances[leaveName] = typeObj;
+
+        tx.set(
+          balRef,
+          { userId: leave.userId, year, balances, updatedAt: new Date().toISOString() },
+          { merge: true }
+        );
+      }
+
+      tx.delete(leaveRef);
+    });
+
+    notify("🗑 Leave request deleted");
+    loadAllLeaves();
+    loadLeaveBalances(yearForReload); // ✅ refresh correct year
+  } catch (err) {
+    console.error(err);
+    notify("❌ Delete failed: " + err.message);
+  }
+};
+
+
+const calcLeaveUnits = (leave) => {
+  const start = new Date(leave.startDate);
+  const end = new Date(leave.endDate);
+
+  const days = (end - start) / (1000 * 60 * 60 * 24) + 1; // inclusive
+  const dayCount = Math.max(0, days);
+
+  const lt = String(leave.leaveType || "").toLowerCase();
+  const multiplier = lt.includes("half") ? 0.5 : 1;
+
+  return dayCount * multiplier;
+};
+
+/*   const deleteLeaveRequest = async (id) => {
+  try {
+    if (!window.confirm("Delete this leave request?")) return;
+
+    await deleteDoc(doc(db, "leaves", id));
+    notify("🗑 Leave request deleted");
+    loadAllLeaves(); // refresh admin list
+  } catch (err) {
+    console.error(err);
+    notify("❌ Delete failed: " + err.message);
+  }
+}; */
+
+   const leaderUpdateOvertimeStatus = async (otDocId, status, memberUserId) => {
     if (!leaderMembers.includes(memberUserId)) {
       return notify("🚫 You cannot approve non-member overtime.");
     }
     await updateOvertimeStatus(otDocId, status);
     await loadLeaderOvertime(leaderMembers);
   };
+
+const deleteOvertimeRequest = async (id) => {
+  try {
+    if (!window.confirm("Delete this overtime request?")) return;
+
+    await deleteDoc(doc(db, "overtimeRequests", id));
+    notify("🗑 Overtime request deleted");
+    loadAllOvertime(); // refresh admin list
+  } catch (err) {
+    console.error(err);
+    notify("❌ Delete failed: " + err.message);
+  }
+};
 
 /* leave request edit by Staff */
 const [editingMyLeave, setEditingMyLeave] = useState(null);
@@ -2438,7 +2761,13 @@ const leaveSummaryUids = Object.keys(usersMap || {})
   }, [user]);
 
   /* ---------------- UI components ---------------- */
-  const colorStatus = (s) => s === "approved" ? <span className="badge green">Approved</span> : s === "rejected" ? <span className="badge red">Rejected</span> : <span className="badge yellow">Pending</span>;
+  /* const colorStatus = (s) => s === "approved" ? <span className="badge green">Approved</span> : s === "rejected" ? <span className="badge red">Rejected</span> : <span className="badge yellow">Pending</span>; */
+
+  const colorStatus = (s) =>
+  s === "approved" ? <span className="badge green">Approved</span>
+  : s === "rejected" ? <span className="badge red">Rejected</span>
+  : s === "leader_approved" ? <span className="badge blue">Leader Approved</span>
+  : <span className="badge yellow">Pending</span>;
 
   /* ---------------- render ---------------- */
   if (!user) {
@@ -4052,14 +4381,42 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                 onChange={(e) => setToDate(e.target.value)}
               />
               </div>
+               <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+              <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={showApprovedLeave}
+                  onChange={(e) => setShowApprovedLeave(e.target.checked)}
+                />
+                Approved
+              </label>
+
+              <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={showRejectedLeave}
+                  onChange={(e) => setShowRejectedLeave(e.target.checked)}
+                />
+                Rejected
+              </label>
+            </div>
 
               <button className="btn" onClick={resetFilters}>Reset</button>
             </div>
             
             <table className="data-table">
-              <thead><tr><th>User</th><th>Start</th><th>End</th><th>LeaveType</th><th>LeaveName</th><th>Reason</th><th>Status</th><th>Action</th></tr></thead>
+              <thead>
+              <tr>
+                <th>User</th><th>Start</th><th>End</th><th>LeaveType</th><th>LeaveName</th>
+                <th>Reason</th>
+                <th>Leader</th>
+                <th>Admin</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
               <tbody>
-                {filteredAllMemberLeaves.length===0 ? <tr><td colSpan="7">No leave requests</td></tr> :
+                {filteredAllMemberLeaves.length===0 ? <tr><td colSpan="10">No leave requests</td></tr> :
                   filteredAllMemberLeaves.map((lv) => (
                     <tr key={lv.id}>
                      {/*  <td>{usersMap[lv.userId] || lv.userId}</td> */}
@@ -4070,21 +4427,20 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                       <td>{lv.leaveType}</td>
                       <td>{lv.leaveName}</td>
                       <td>{lv.reason}</td>
+                       <td>{lv.leaderActionBy ? displayUser(lv.leaderActionBy) : "-"}</td>
+                      <td>{lv.adminActionBy ? displayUser(lv.adminActionBy) : "-"}</td>
                       <td>{colorStatus(lv.status)}</td>
                       <td>
                         <div style={{ display: "flex", justifyContent: "start", gap: "2px" }}>
-                          <button className="btn small" onClick={() => updateLeaveStatus(lv.id, "approved")}>✅</button>
-                          <button className="btn small red" onClick={() => updateLeaveStatus(lv.id, "rejected")}>❌</button>
-                          <button
-                            className="btn small blue"
-                            disabled={lv.status !== "pending"}
-                            style={{
-                              opacity: lv.status !== "pending" ? 0.4 : 1,
-                              cursor: lv.status !== "pending" ? "not-allowed" : "pointer"
-                            }}
-                            onClick={() => {
-                              if (lv.status !== "pending") return;
+                          {/* <button className="btn small" onClick={() => updateLeaveStatus(lv.id, "approved")}>✅</button>
+                          <button className="btn small red" onClick={() => updateLeaveStatus(lv.id, "rejected")}>❌</button> */}
+                          <button className="btn small" onClick={() => adminUpdateLeaveStatus(lv.id, "approved", lv)}>✅</button>
+                          <button className="btn small red" onClick={() => adminUpdateLeaveStatus(lv.id, "rejected", lv)}>❌</button>
 
+                            <button
+                            className="btn small blue"
+                             onClick={() => {
+                              
                               setEditingLeave(lv);
                               setEditLeaveStart(lv.startDate);
                               setEditLeaveEnd(lv.endDate);
@@ -4094,6 +4450,12 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                             }}
                           >
                             ✏ Edit
+                          </button>
+                          <button
+                            className="btn small red"
+                            onClick={() => deleteLeaveRequest(lv.id)}
+                          >
+                            🗑️
                           </button>
 
                         </div>
@@ -4484,6 +4846,26 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                   style={{ flex: 1 }}
                 />
 
+                <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                  <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={showApprovedOT}
+                      onChange={(e) => setShowApprovedOT(e.target.checked)}
+                    />
+                    Approved
+                  </label>
+
+                  <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={showRejectedOT}
+                      onChange={(e) => setShowRejectedOT(e.target.checked)}
+                    />
+                    Rejected
+                  </label>
+                 </div>
+
                 <input
                   type="date"
                   value={dateFilter}
@@ -4493,9 +4875,9 @@ const leaveSummaryUids = Object.keys(usersMap || {})
               </div>
 
             <table className="data-table">
-              <thead><tr><th>User</th><th>Date</th><th>Time</th><th>Total</th><th>Reason</th><th>Status</th><th>Action</th></tr></thead>
+              <thead><tr><th>User</th><th>Date</th><th>Time</th><th>Total</th><th>Reason</th><th>Approver</th><th>Status</th><th>Action</th></tr></thead>
               <tbody>
-                {filteredAllMemberOT.length===0 ? <tr><td colSpan="7">No OT requests</td></tr> :
+                {filteredAllMemberOT.length===0 ? <tr><td colSpan="8">No OT requests</td></tr> :
                   filteredAllMemberOT.map((ot) => (
                     <tr key={ot.id}>
                       {/* <td>{usersMap[ot.userId] || ot.userId}</td> */}
@@ -4505,11 +4887,18 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                       <td>{ot.startTime} - {ot.endTime}</td>
                       <td>{ot.totalTime}</td>
                       <td>{ot.reason}</td>
+                      <td>{ot.actionBy ? displayUser(ot.actionBy) : "-"}</td>
                       <td>{colorStatus(ot.status)}</td>
                       <td>
                         <div style={{ display: "flex", justifyContent: "center", gap: "4px" }}>
                         <button className="btn small" onClick={()=>updateOvertimeStatus(ot.id,"approved")}>✅</button>
                         <button className="btn small red" onClick={()=>updateOvertimeStatus(ot.id,"rejected")}>❌</button>
+                        <button
+                          className="btn small red"
+                          onClick={() => deleteOvertimeRequest(ot.id)}
+                        >
+                          🗑️
+                        </button>
                         </div>
                       </td>
                     </tr>

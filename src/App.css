@@ -110,6 +110,28 @@ h1, h2, h3 {
   font-size: 15px;
   transition: 0.2s;
   font-weight: 500;
+  background-color: #ddd;
+}
+
+.badge {
+    padding: 4px 7px 7px;
+    display: block;
+    text-align: center;
+    font-size: 14px;
+    font-weight: bold;
+    color: white;
+}
+.badge.green {
+  background: #16a34a;
+}
+.badge.red {
+  background: #ef4444;
+}
+.badge.blue {
+  background: #0ea5e9;
+}
+.badge.yellow {
+  background: #e1810a;
 }
 
 .btn.green {

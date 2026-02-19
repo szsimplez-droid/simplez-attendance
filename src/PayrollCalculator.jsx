@@ -105,7 +105,7 @@ const MoneyInput = ({ name, value, onChange, disabled }) => {
 
 
   // AUTO FILL DATA FROM FIRESTORE
-  const loadPayrollAutoData = async (uid) => {
+  /* const loadPayrollAutoData = async (uid) => {
   if (!uid) return;
 
   // --- LOAD ATTENDANCE ---
@@ -189,44 +189,201 @@ const MoneyInput = ({ name, value, onChange, disabled }) => {
     workedDays: attendanceDays,
    
   }));
+}; */
+
+const loadPayrollAutoData = async (uid, ym) => {
+  if (!uid || !ym) return;
+
+  // Firestore can store dates as string ("YYYY-MM-DD"), JS Date, or Timestamp.
+  // This normalizes anything into an ISO date string "YYYY-MM-DD".
+  const toISODate = (v) => {
+    if (!v) return "";
+    // Firestore Timestamp
+    if (typeof v === "object" && typeof v.toDate === "function") {
+      try {
+        return v.toDate().toISOString().slice(0, 10);
+      } catch {
+        return "";
+      }
+    }
+    // JS Date
+    if (v instanceof Date) {
+      return isNaN(v.getTime()) ? "" : v.toISOString().slice(0, 10);
+    }
+    // String or number
+    const s = String(v);
+    // If already looks like YYYY-MM-DD (or ISO), take first 10 chars.
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    // Fallback: try Date parsing
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
+  };
+
+  // --- LOAD ATTENDANCE (FILTER BY MONTH) ---
+  const attQ = query(collection(db, "attendance"), where("userId", "==", uid));
+  const attSnap = await getDocs(attQ);
+
+  let attendanceDays = 0;
+  let holidayDays = 0;
+  let holidayHours = 0;
+
+  
+
+  attSnap.forEach((docu) => {
+    const a = docu.data();
+    const dayStr = toISODate(a?.date);
+    if (!dayStr) return;
+
+    // ✅ only selected month (ym = "YYYY-MM")
+    if (!dayStr.startsWith(ym)) return;
+
+     if (a.clockIn) attendanceDays++;
+
+    const date = new Date(dayStr);
+    const day = date.getDay(); // 0 Sun, 6 Sat
+
+    if (day === 0 || day === 6) {
+      holidayDays++;
+
+      if (a.clockIn && a.clockOut) {
+        const diff = (new Date(a.clockOut) - new Date(a.clockIn)) / 3600000;
+        holidayHours += diff > 0 ? diff : 0;
+      }
+    }
+  }); 
+
+  // --- LOAD LEAVES (FILTER BY MONTH) ---
+  const leaveQ = query(collection(db, "leaves"), where("userId", "==", uid));
+  const leaveSnap = await getDocs(leaveQ);
+
+  let annual = 0,
+    casual = 0,
+    sick = 0,
+    comp = 0;
+
+  const addLeaveUnitsIfInMonth = (leaveDoc) => {
+    const l = leaveDoc;
+    if (l.status !== "approved") return;
+    if (!l.startDate || !l.endDate) return;
+
+    const startISO = toISODate(l.startDate);
+    const endISO = toISODate(l.endDate);
+    if (!startISO || !endISO) return;
+
+    const start = new Date(startISO);
+    const end = new Date(endISO);
+
+    // walk day-by-day so cross-month leaves count correctly
+    const cur = new Date(start);
+    while (cur <= end) {
+      const yyyy = cur.getFullYear();
+      const mm = String(cur.getMonth() + 1).padStart(2, "0");
+      const dd = String(cur.getDate()).padStart(2, "0");
+      const dayStr = `${yyyy}-${mm}-${dd}`;
+
+      if (dayStr.startsWith(ym)) {
+        // half day only when start=end and type includes half
+        const isHalf =
+          startISO === endISO &&
+          String(l.leaveType || "").toLowerCase().includes("half");
+
+        const units = isHalf ? 0.5 : 1;
+
+        if (l.leaveName === "Annual Leave") annual += units;
+        if (l.leaveName === "Casual Leave") casual += units;
+
+        // your code used "Sick Leave" and "Withoutpay Leave" (keep your labels)
+        if (l.leaveName === "Sick Leave") sick += units;
+        if (l.leaveName === "Withoutpay Leave") comp += units;
+      }
+
+      cur.setDate(cur.getDate() + 1);
+    }
+  };
+
+  leaveSnap.forEach((d) => addLeaveUnitsIfInMonth(d.data()));
+
+  // --- LOAD OVERTIME (FILTER BY MONTH) ---
+  const otQ = query(
+    collection(db, "overtimeRequests"),
+    where("userId", "==", uid)
+  );
+  const otSnap = await getDocs(otQ);
+
+  let otHours = 0;
+
+  otSnap.forEach((docu) => {
+    const o = docu.data();
+    if (o.status !== "approved") return;
+
+    const dayStr = toISODate(o?.date);
+    if (!dayStr) return;
+
+    // ✅ only selected month
+    if (!dayStr.startsWith(ym)) return;
+
+    const [sh, sm] = o.startTime.split(":").map(Number);
+    const [eh, em] = o.endTime.split(":").map(Number);
+    const diff = eh * 60 + em - (sh * 60 + sm);
+
+    if (diff > 0) otHours += diff / 60;
+  });
+
+  // --- UPDATE FORM ---
+  setData((prev) => ({
+    ...prev,
+    annualLeave: annual,
+    casualLeave: casual,
+    sickLeave: sick,
+    compLeave: comp,
+    holidayWorkDays: holidayDays,
+    holidayWorkHours: holidayHours,
+    overtimeHours: otHours,
+    workedDays: attendanceDays,
+  }));
 };
+
+useEffect(() => {
+  if (!selectedUserId || !month) return;
+  loadPayrollAutoData(selectedUserId, month);
+}, [selectedUserId, month]);
 
 
   const [data, setData] = useState({
-    name: "",
-    userId:"",
-    languageLevel: "",
-    staffId: "",
-    type: "正社員",
-    staffposition: "",
-    staffteam: "",
-    month:"",
-    workType: "フルタイム",
-    joinDate: "",
-    standardDays: 0,
-    workedDays: 0,
-    annualLeave: 0,
-    casualLeave: 0,
-    absentDays: 0,
-    sickLeave: 0,
-    compLeave: 0,
-    holidayWorkDays: 0,
-    holidayWorkHours: 0,
-    overtimeHours: 0,
-    deductionRate:0,
-    lateHours: 0,
-    basicSalary: 0,
-    permanentEmp: 0,
-    pitchAdjust: 0,
-    pitchTransfer: 0,
-    jobAllowance: 0,
-    directorAllowance: 0,
-    languageAllowance: 0,
-    ssb: 0,
-    incomeTax: 0,
-    bonus: 0,
-    centralRate: 2100,
-    cbRate: 3950,
+      name: "",
+      userId:"",
+      languageLevel: "",
+      staffId: "",
+      type: "正社員",
+      staffposition: "",
+      staffteam: "",
+      month:"",
+      workType: "フルタイム",
+      joinDate: "",
+      standardDays: 0,
+      workedDays: 0,
+      annualLeave: 0,
+      casualLeave: 0,
+      absentDays: 0,
+      sickLeave: 0,
+      compLeave: 0,
+      holidayWorkDays: 0,
+      holidayWorkHours: 0,
+      overtimeHours: 0,
+      deductionRate:0,
+      lateHours: 0,
+      basicSalary: 0,
+      permanentEmp: 0,
+      pitchAdjust: 0,
+      pitchTransfer: 0,
+      jobAllowance: 0,
+      directorAllowance: 0,
+      languageAllowance: 0,
+      ssb: 0,
+      incomeTax: 0,
+      bonus: 0,
+      centralRate: 2100,
+      cbRate: 3950,
   });
 
 /* const handleChange = (e) => {
@@ -272,7 +429,7 @@ const handleChange = (e) => {
   setData(prev => ({
     ...prev,
     [name]: numberFields.has(name)
-      ? (value === "" ? 0 : Number(value))
+      ? (value === "" ? "" : Number(value))
       : value
   }));
 };
@@ -495,7 +652,8 @@ const handlePickUser = async (uid) => {
               languageLevel: user.languageLevel || ""
             }));
 
-            loadPayrollAutoData(uid);
+            /* loadPayrollAutoData(uid); */
+            loadPayrollAutoData(uid, month);
           }}
         >
           <option value="">Select Staff</option>
@@ -515,7 +673,7 @@ const handlePickUser = async (uid) => {
           <label>役職 <br></br>Position<input name="staffposition" value={data.staffposition} onChange={handleChange} /></label>
           <label>チーム <br></br>Team<input name="staffteam" value={data.staffteam} onChange={handleChange} /></label>
          {/*  <label>For the Month of<input name="paymonth" value={data.paymonth} onChange={handleChange} /></label> */}
-          <select value={month} onChange={(e) =>{setMonth(e.target.value);setData(prev =>({ ...prev, month: e.target.value }));}}>
+         {/*  <select value={month} onChange={(e) =>{setMonth(e.target.value);setData(prev =>({ ...prev, month: e.target.value }));}}>
           <option value="">Select Month</option>
           <option value="January">January</option>
           <option value="February">February</option>
@@ -529,21 +687,33 @@ const handlePickUser = async (uid) => {
           <option value="October">October</option>
           <option value="November">November</option>
           <option value="December">December</option>
-        </select>
-        
+        </select> */}
+         <label>Select Month and Year
+        <input
+          type="month"
+          value={month}
+          onChange={(e) => {
+            const ym = e.target.value; // "2026-02"
+            setMonth(ym);
+            setData((prev) => ({ ...prev, month: ym }));
+          }}
+          style={{ minWidth: 180 }}
+        /></label>
+        <label>Select Rank
         <select value={rank} onChange={e => {setRank(e.target.value);  setPitch("");}}>
         <option value="">Select Rank</option>
         {ranks.map(r => (
         <option key={r} value={r}>{r}</option>
         ))}
-        </select>
+        </select></label>
 
+         <label>Select Pitch
         <select value={pitch} onChange={e => setPitch(e.target.value)}>
         <option value="">Select Pitch</option>
         {pitches.map(p => (
         <option key={p} value={p}>{p}</option>
         ))}
-        </select>
+        </select></label>
 
         </div>
       </section>
@@ -642,10 +812,13 @@ const handlePickUser = async (uid) => {
   className="btn submit"
   onClick={async () => {
     if (!selectedUserId) return notify("Please select a staff first!");
+     if (!data.month) return notify("Please select month!");
     try {
       const payload = sanitizeForFirestore({
         ...data,
         userId: selectedUserId,
+        rank,
+        pitch,
         actualHours,
         holidayDays,
         basicLatest,
