@@ -1128,6 +1128,149 @@ const sendPayslip = async (p) => {
     setAllOvertime(list);
   };
 
+  // Add loaders for holidays (query by month range) 
+    const monthRange = (yyyyMm) => {
+    const [y, m] = yyyyMm.split("-").map(Number);
+    const first = new Date(y, m - 1, 1);
+    const last = new Date(y, m, 0);
+    const start = first.toISOString().slice(0, 10);
+    const end = last.toISOString().slice(0, 10);
+    return { start, end };
+    };
+  
+    // ---------- Company Calendar (Holidays) ----------
+  const [companyHolidays, setCompanyHolidays] = useState([]); // list of {id/date/name...}
+  const [holidayMonth, setHolidayMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; // "YYYY-MM"
+  });
+  const [holidayDate, setHolidayDate] = useState(""); // "YYYY-MM-DD"
+  const [holidayName, setHolidayName] = useState("");
+  
+  
+  // Attendance Overview controls
+  const [overviewMonth, setOverviewMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [overviewUserId, setOverviewUserId] = useState("");
+  
+  
+    const loadCompanyHolidaysForMonth = async (yyyyMm) => {
+      try {
+        const { start, end } = monthRange(yyyyMm);
+        const q = query(
+          collection(db, "companyCalendar"),
+          where("date", ">=", start),
+          where("date", "<=", end),
+          orderBy("date", "asc")
+        );
+        const snap = await getDocs(q);
+        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setCompanyHolidays(rows);
+      } catch (err) {
+        console.error(err);
+        notify("❌ Cannot load company holidays: " + err.message);
+      }
+    };
+  
+      useEffect(() => {
+      if (!isAdmin) return;
+      loadCompanyHolidaysForMonth(holidayMonth);
+    }, [isAdmin, holidayMonth]);
+  
+    useEffect(() => {
+      // Attendance Overview uses overviewMonth
+      if (!isAdmin) return;
+      loadCompanyHolidaysForMonth(overviewMonth);
+    }, [isAdmin, overviewMonth]);
+  
+    //Admin CRUD for Company Calendar
+   const adminAddOrUpdateHoliday = async () => {
+    try {
+      if (!holidayDate || !holidayName.trim()) {
+        notify("Please select date and enter holiday name.");
+        return;
+      }
+  
+      // ✅ must be ISO "YYYY-MM-DD"
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(holidayDate)) {
+        notify("❌ Holiday date must be YYYY-MM-DD (please use date picker).");
+        return;
+      }
+  
+      await setDoc(
+        doc(db, "companyCalendar", holidayDate),
+        {
+          date: holidayDate,
+          name: holidayName.trim(),
+          type: "holiday",
+          updatedAt: serverTimestamp(),
+          createdAt: serverTimestamp(),
+          createdBy: user?.uid || "",
+        },
+        { merge: true }
+      );
+  
+      notify("✅ Holiday saved");
+      setHolidayName("");
+      loadCompanyHolidaysForMonth(holidayMonth);
+    } catch (err) {
+      console.error(err);
+      notify("❌ Cannot save holiday: " + err.message);
+    }
+  };
+  
+  const adminDeleteHoliday = async (dateId) => {
+    try {
+      if (!window.confirm("Delete this holiday?")) return;
+      await deleteDoc(doc(db, "companyCalendar", dateId));
+      notify("🗑 Holiday deleted");
+      loadCompanyHolidaysForMonth(holidayMonth);
+    } catch (err) {
+      console.error(err);
+      notify("❌ Cannot delete holiday: " + err.message);
+    }
+  };
+  
+  // Calendar builder + Attendance Overview mapping (FIXED: no timezone shift)
+  const buildCalendarCells = (yyyyMm) => {
+    const [y, m] = yyyyMm.split("-").map(Number);
+    const first = new Date(y, m - 1, 1);
+    const last = new Date(y, m, 0);
+  
+    const startWeekday = first.getDay(); // 0 Sun .. 6 Sat
+    const totalDays = last.getDate();
+  
+    const pad2 = (n) => String(n).padStart(2, "0");
+    const toLocalDateStr = (d) =>
+      `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  
+    const cells = [];
+  
+    for (let i = 0; i < startWeekday; i++) cells.push(null);
+  
+    for (let day = 1; day <= totalDays; day++) {
+      const dd = new Date(y, m - 1, day);
+      cells.push(toLocalDateStr(dd));
+    }
+  
+    return cells;
+  };
+  
+  const holidayMap = React.useMemo(() => {
+    const m = {};
+    (companyHolidays || []).forEach((h) => {
+      if (h?.date) m[h.date] = h;
+    });
+    return m;
+  }, [companyHolidays]);
+  
+  const findAttendanceByUserAndDate = (uid, dateStr) => {
+    if (!uid || !dateStr) return null;
+    return (allAttendance || []).find((a) => a.userId === uid && a.date === dateStr) || null;
+  };
+
   // Calculate duration in hours and minutes
   const calcPoDuration = (from, to) => {
   const [fh, fm] = from.split(":").map(Number);
@@ -2871,6 +3014,14 @@ const leaveSummaryUids = Object.keys(usersMap || {})
         <button className="nav-item" onClick={() => { setActiveSidebar("admin-employee-form"); setSidebarOpen(false); }}><span className="icon">🧾</span> Employee Information</button>
          )}
         <button  className="nav-item" onClick={() => {setActiveSidebar("admin-employee");setSidebarOpen(false);}}><span className="icon">👥</span> Employee List</button>
+        <button className="nav-item" onClick={() => {setActiveSidebar("admin-att-overview"); setSidebarOpen(false);}}>
+          <span className="icon">🗓️</span> Attendance Overview
+        </button>
+
+        <button className="nav-item" onClick={() => {setActiveSidebar("admin-company-calendar"); setSidebarOpen(false);}}>
+          <span className="icon">🎌</span> Company Calendar
+        </button>
+
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-att");setSidebarOpen(false);}}><span className="icon">📊</span> All Attendance</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-att-summary");setSidebarOpen(false);}}><span className="icon">📊</span> Monthly Attendance Summary</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-leave");setSidebarOpen(false);}}><span className="icon">📄</span>All Leave Requests</button>
@@ -4089,6 +4240,135 @@ const leaveSummaryUids = Object.keys(usersMap || {})
   </section>
 )}
 
+        {isAdmin && activeSidebar === "admin-company-calendar" && (
+        <section className="card">
+        <h2>Company Calendar (Holidays)</h2>
+
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <label style={{ fontWeight: 600 }}>Month:</label>
+        <input type="month" value={holidayMonth} onChange={(e) => setHolidayMonth(e.target.value)} />
+
+        <input type="date" value={holidayDate} onChange={(e) => setHolidayDate(e.target.value)} />
+        <input
+          type="text"
+          placeholder="Holiday name"
+          value={holidayName}
+          onChange={(e) => setHolidayName(e.target.value)}
+          style={{ minWidth: 240 }}
+        />
+        <button className="btn blue" onClick={adminAddOrUpdateHoliday}>💾 Save Holiday</button>
+        </div>
+
+        <div style={{ marginTop: 14 }}>
+        <table className="data-table">
+          <thead>
+            <tr><th>Date</th><th>Name</th><th>Action</th></tr>
+          </thead>
+          <tbody>
+            {companyHolidays.length === 0 ? (
+              <tr><td colSpan="3">No holidays in this month.</td></tr>
+            ) : (
+              companyHolidays.map((h) => (
+                <tr key={h.id}>
+                  <td style={{ color: "red", fontWeight: 700 }}>{h.date}</td>
+                  <td style={{ color: "red", fontWeight: 700 }}>{h.name}</td>
+                  <td>
+                    <button className="btn small red" onClick={() => adminDeleteHoliday(h.id)}>🗑 Delete</button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+        </div>
+        </section>
+        )}
+
+
+        {isAdmin && activeSidebar === "admin-att-overview" && (
+        <section className="card">
+        <h2>Attendance Overview (Calendar)</h2>
+
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+        <label style={{ fontWeight: 600 }}>Month:</label>
+        <input type="month" value={overviewMonth} onChange={(e) => setOverviewMonth(e.target.value)} />
+
+        <label style={{ fontWeight: 600 }}>Staff:</label>
+        <select value={overviewUserId} onChange={(e) => setOverviewUserId(e.target.value)} style={{ minWidth: 260 }}>
+        <option value="">-- Select staff --</option>
+        {Object.keys(usersMap || {})
+          .sort((a, b) => (usersMap[a]?.eid || "").localeCompare(usersMap[b]?.eid || ""))
+          .map((uid) => (
+            <option key={uid} value={uid}>
+              {(usersMap[uid]?.eid || "-")} - {(usersMap[uid]?.name || usersMap[uid]?.email || uid)}
+            </option>
+          ))}
+        </select>
+        </div>
+
+        {!overviewUserId ? (
+        <div>Please select a staff.</div>
+        ) : (
+        <div>
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(7, minmax(120px, 1fr))",
+          gap: 8
+        }}>
+          {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d) => (
+            <div key={d} style={{ fontWeight: 800, opacity: 0.7 }}>{d}</div>
+          ))}
+
+            {buildCalendarCells(overviewMonth).map((dateStr, idx) => {
+              if (!dateStr) return <div key={idx} style={{ minHeight: 92 }} />;
+
+              const weekday = new Date(dateStr + "T00:00:00").getDay(); // ✅ stable
+              const isWeekend = weekday === 0 || weekday === 6;
+              const isHoliday = !!holidayMap[dateStr];
+              const isRedDay = isWeekend || isHoliday;
+
+              const att = findAttendanceByUserAndDate(overviewUserId, dateStr);
+              const leaveAbbr = getLeaveAbbreviationForDate(overviewUserId, dateStr) || "";
+
+              return (
+                <div
+                  key={dateStr}
+                  style={{
+                    border: "1px solid #e5e7eb",
+                    borderRadius: 10,
+                    padding: 10,
+                    minHeight: 92,
+                    background: isHoliday ? "#fecaca" : isWeekend ? "#fef2f2" : "white"
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                    <div style={{ fontWeight: 900, color: isRedDay ? "#b91c1c" : "inherit" }}>
+                      {dateStr}
+                    </div>
+
+                    {leaveAbbr ? (
+                      <div style={{ fontWeight: 900, color: "#d97706" }}>{leaveAbbr}</div>
+                    ) : null}
+                  </div>
+
+                  {isHoliday && (
+                    <div style={{ marginTop: 6, color: "#b91c1c", fontWeight: 700, fontSize: 12 }}>
+                      🎌 {holidayMap[dateStr]?.name}
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: 8, fontSize: 13 }}>
+                    <div><b>IN:</b> {att?.clockInTime || "—"}</div>
+                    <div><b>OUT:</b> {att?.clockOutTime || "—"}</div>
+                  </div>
+                </div>
+              );
+            })}
+                    </div>
+                  </div>
+                )}
+          </section>
+        )}
 
         {/* ADMIN: All Attendance */}
         {isAdmin && activeSidebar==="admin-att" && (
