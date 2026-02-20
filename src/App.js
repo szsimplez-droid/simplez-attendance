@@ -7,7 +7,8 @@ import React, { useState, useEffect, useCallback} from "react";
 import { jsPDF } from "jspdf";
 import {autoTable} from "jspdf-autotable";
 import { getFunctions, httpsCallable } from "firebase/functions";
-
+import * as XLSX from "xlsx";
+import { saveAs } from "file-saver";
 import { collection, getDocs, onSnapshot,orderBy } from "firebase/firestore";// already imported, just make sure
 import { app, db, auth } from "./firebase";
 
@@ -701,7 +702,13 @@ const loadLeaderAttendance = async (memberIds) => {
       const has = (r) => rolesArr.includes(r) || data.role === r;
 
       setName(data.name || "");
-      setMessage(`Welcome ${data.name || cred.user.email} (${data.role})`);
+      setMessage(
+      <>
+        Welcome {data.name || cred.user.email}
+        <br />
+        You are now logged in as {data.role}
+      </>
+    );
       // load personal lists
       await loadAttendance(uid);
       await loadLeaves(uid);
@@ -2641,7 +2648,154 @@ const leaveSummaryUids = Object.keys(usersMap || {})
   })
   .sort((a, b) => (getEid(a) || "").localeCompare(getEid(b) || ""));
 
-
+  /* export excel start */
+        const exportToExcel = (rows, filename, sheetName = "Sheet1") => {
+        try {
+          const ws = XLSX.utils.json_to_sheet(rows);
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  
+          const excelBuffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+          const data = new Blob([excelBuffer], {
+            type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          });
+  
+          saveAs(data, `${filename}.xlsx`);
+        } catch (e) {
+          console.error(e);
+          notify("❌ Export failed: " + (e?.message || "unknown error"));
+        }
+      };
+       
+        const [exportMonth, setExportMonth] = useState(() => {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; // YYYY-MM
+        });
+        const [exportUserQuery, setExportUserQuery] = useState(""); // employee id/name/email
+        const [exportUserId, setExportUserId] = useState("");       // optional: exact staff select
+  
+        const ExportmonthRange = (yyyyMm) => {
+          const [y, m] = yyyyMm.split("-").map(Number);
+          const start = `${y}-${String(m).padStart(2, "0")}-01`;
+          const nextMonth = new Date(y, m, 1);
+          const endExclusive = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, "0")}-01`;
+          return { start, endExclusive };
+        };
+  
+        const staffMatches = (userId, query) => {
+          if (!query) return true;
+          const u = usersMap?.[userId] || {};
+          const text = `${u.eid || ""} ${u.name || ""} ${u.email || ""}`.toLowerCase();
+          return text.includes(query.toLowerCase());
+        };
+  
+        //Attendance (date is inside month)
+        const exportAttendanceExcelFiltered = () => {
+        const { start, endExclusive } = ExportmonthRange(exportMonth);
+  
+        const filtered = (allAttendance || []).filter((a) => {
+          if (!a?.date) return false;
+          if (a.date < start || a.date >= endExclusive) return false;
+  
+          if (exportUserId) return a.userId === exportUserId;
+          return staffMatches(a.userId, exportUserQuery);
+        });
+  
+        const rows = filtered.map((a) => ({
+          Date: a.date || "",
+          EmployeeID: usersMap?.[a.userId]?.eid || "",
+          Name: usersMap?.[a.userId]?.name || "",
+          Email: usersMap?.[a.userId]?.email || "",
+          ClockIn: a.clockInTime || "",
+          ClockOut: a.clockOutTime || "",
+        }));
+  
+        exportToExcel(rows, `Attendance_${exportMonth}`, "Attendance");
+      };
+  
+      //OT (same idea, OT has date)
+        const exportOTExcelFiltered = () => {
+        const { start, endExclusive } = monthRange(exportMonth);
+  
+        const filtered = (allOvertime || []).filter((ot) => {
+          if (!ot?.date) return false;
+          if (ot.date < start || ot.date >= endExclusive) return false;
+  
+          if (exportUserId) return ot.userId === exportUserId;
+          return staffMatches(ot.userId, exportUserQuery);
+        });
+  
+        const rows = filtered.map((ot) => ({
+          Date: ot.date || "",
+          EmployeeID: usersMap?.[ot.userId]?.eid || "",
+          Name: usersMap?.[ot.userId]?.name || "",
+          Email: usersMap?.[ot.userId]?.email || "",
+          Start: ot.startTime || "",
+          End: ot.endTime || "",
+          Hours: ot.hours || "",
+          Reason: ot.reason || "",
+          Status: ot.status || "",
+        }));
+  
+        exportToExcel(rows, `OT_${exportMonth}`, "OT");
+      };
+  
+      //Leave (overlap with month)
+      const exportLeaveExcelFiltered = () => {
+      const { start, endExclusive } = monthRange(exportMonth);
+  
+      const filtered = (allLeaves || []).filter((lv) => {
+        const s = lv?.startDate;
+        const e = lv?.endDate;
+        if (!s || !e) return false;
+  
+        // overlap condition: [s,e] overlaps [start, endExclusive)
+        const overlaps = !(e < start || s >= endExclusive);
+        if (!overlaps) return false;
+  
+        if (exportUserId) return lv.userId === exportUserId;
+        return staffMatches(lv.userId, exportUserQuery);
+      });
+  
+      const rows = filtered.map((lv) => ({
+        StartDate: lv.startDate || "",
+        EndDate: lv.endDate || "",
+        EmployeeID: usersMap?.[lv.userId]?.eid || "",
+        Name: usersMap?.[lv.userId]?.name || "",
+        Email: usersMap?.[lv.userId]?.email || "",
+        Type: lv.leaveType || lv.type || "",
+        Reason: lv.reason || "",
+        Status: lv.status || "",
+      }));
+  
+      exportToExcel(rows, `Leave_${exportMonth}`, "Leave");
+    };
+  
+    //Employee info (filter by name/id/email only)
+    const exportEmployeesExcelFiltered = () => {
+    const q = exportUserQuery.trim().toLowerCase();
+  
+    const filtered = (employees || []).filter((e) => {
+      if (!q) return true;
+      const text = `${e.eid || ""} ${e.name || ""} ${e.email || ""}`.toLowerCase();
+      return text.includes(q);
+    });
+  
+    const rows = filtered.map((e) => ({
+      EmployeeID: e.eid || "",
+      Name: e.name || "",
+      Email: e.email || "",
+      Department: e.department || "",
+      Designation: e.designation || "",
+      Phone: e.phone || "",
+      Role: e.role || (e.roles || []).join(", "),
+    }));
+  
+    exportToExcel(rows, `Employees_${exportMonth}`, "Employees");
+  };
+  
+  
+    // export excel end
 
 
   /* ---------------- summary / csv / clear ---------------- */
@@ -2982,7 +3136,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
 <div className={`sidebar ${sidebarOpen ? "open" : ""}`}>
   <div className="brand">
     <h3>Simple'Z Attendance</h3>
-    <small>Hi, {name || user.email}</small>
+    <small><b>Hi, {name || user.email}</b></small>
   </div>
 
   <nav>
@@ -2993,7 +3147,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
 
       {isLeader && (
       <>
-      <div className="sidebar-section-title">Leader Dashboard</div>
+      <div className="sidebar-section-title" style={{color:"#0ea5e9",fontWeight:"bold"}}>Leader Dashboard</div>
       <button className="nav-item" onClick={() => {setActiveSidebar("member-att-panel"); setSidebarOpen(false);}}>
         <span className="icon">👥</span> Members Attendance
       </button>
@@ -3009,26 +3163,25 @@ const leaveSummaryUids = Object.keys(usersMap || {})
     {isAdmin &&  (
       <>
         <hr />
-        <div className="sidebar-section-title">Admin Management</div>
+        <div className="sidebar-section-title" style={{color:"#0ea5e9",fontWeight:"bold"}}>Admin Dashboard</div>
        {canAccessPayroll && (
         <button className="nav-item" onClick={() => { setActiveSidebar("admin-employee-form"); setSidebarOpen(false); }}><span className="icon">🧾</span> Employee Information</button>
          )}
         <button  className="nav-item" onClick={() => {setActiveSidebar("admin-employee");setSidebarOpen(false);}}><span className="icon">👥</span> Employee List</button>
-        <button className="nav-item" onClick={() => {setActiveSidebar("admin-att-overview"); setSidebarOpen(false);}}>
-          <span className="icon">🗓️</span> Attendance Overview
-        </button>
-
-        <button className="nav-item" onClick={() => {setActiveSidebar("admin-company-calendar"); setSidebarOpen(false);}}>
-          <span className="icon">🎌</span> Company Calendar
-        </button>
-
+        <div className="sidebar-section-title" style={{color:"#0ea5e9",fontWeight:"bold"}}>Attendance Management</div>
+        <button className="nav-item" onClick={() => {setActiveSidebar("admin-att-overview"); setSidebarOpen(false);}}><span className="icon">🗓️</span> Attendance Overview</button>
+        <button className="nav-item" onClick={() => {setActiveSidebar("admin-company-calendar"); setSidebarOpen(false);}}><span className="icon">🎌</span> Company Calendar</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-att");setSidebarOpen(false);}}><span className="icon">📊</span> All Attendance</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-att-summary");setSidebarOpen(false);}}><span className="icon">📊</span> Monthly Attendance Summary</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-leave");setSidebarOpen(false);}}><span className="icon">📄</span>All Leave Requests</button>
+
+        <div className="sidebar-section-title" style={{color:"#0ea5e9",fontWeight:"bold"}}>Leave Management</div>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-leave-balance");setSidebarOpen(false);}}><span className="icon">📊</span> Leave Balance Management</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-leave-summary");setSidebarOpen(false);}}><span className="icon">📝</span>All Staff Leave Summary</button>
+        <button className="nav-item" onClick={() => {setActiveSidebar("admin-summary");setSidebarOpen(false);}}><span className="icon">📅</span>Monthly Summary</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-po");setSidebarOpen(false);}}><span className="icon">💼</span>All Staff P/O Reports</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-ot");setSidebarOpen(false);}}><span className="icon">⏫</span>All Overtime Requests</button>
+        
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-summary");setSidebarOpen(false);}}><span className="icon">📅</span>Monthly Summary</button>
          {/* 🔐 Payroll – ADMIN ONLY */}
         {canAccessPayroll && (
@@ -3038,10 +3191,12 @@ const leaveSummaryUids = Object.keys(usersMap || {})
           </>
         )}
         
-        <div className="sidebar-actions">
+        <button className="nav-item" onClick={() => { setActiveSidebar("admin-export"); setSidebarOpen(false); }}><span className="icon">📤</span> Export Excel</button>
+
+       {/*  <div className="sidebar-actions">
           <button className="btn export" onClick={exportCSV}>⬇ Export CSV</button>
           <button className="btn red" onClick={()=>backupAndClear("all")}>🧹 Backup+Clear All</button>
-        </div>
+        </div> */}
 
         <div style={{ marginBottom: "15px",marginTop:"15px",color:"AccentColor" }}>
           <p><b>Reset Month:</b></p>
@@ -5334,6 +5489,57 @@ const leaveSummaryUids = Object.keys(usersMap || {})
     )}
 
   </section> 
+)}
+
+    {isAdmin && activeSidebar === "admin-export" && (
+  <section className="card">
+    <h2>Export Excel</h2>
+
+    <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+      <label style={{ fontWeight: 700 }}>Month:</label>
+      <input type="month" value={exportMonth} onChange={(e) => setExportMonth(e.target.value)} />
+
+      <label style={{ fontWeight: 700 }}>Staff:</label>
+      <select
+        value={exportUserId}
+        onChange={(e) => setExportUserId(e.target.value)}
+        style={{ minWidth: 260 }}
+      >
+        <option value="">-- All / Use search --</option>
+
+        {Object.entries(usersMap || {})
+          .sort(([, a], [, b]) => {
+            const ida = a?.eid || "";
+            const idb = b?.eid || "";
+            return ida.localeCompare(idb, undefined, { numeric: true });
+          })
+          .map(([uid, u]) => (
+            <option key={uid} value={uid}>
+              {u.eid || "-"} - {u.name || u.email || uid}
+            </option>
+          ))}
+      </select>
+
+      <input
+        type="text"
+        placeholder="Search by ID / Name / Email"
+        value={exportUserQuery}
+        onChange={(e) => setExportUserQuery(e.target.value)}
+        style={{ minWidth: 260 }}
+      />
+
+      <button className="btn" onClick={() => { setExportUserId(""); setExportUserQuery(""); }}>
+        Clear Filter
+      </button>
+    </div>
+
+    <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16 }}>
+      <button className="btn blue" onClick={exportAttendanceExcelFiltered}>Export Attendance</button>
+      <button className="btn blue" onClick={exportEmployeesExcelFiltered}>Export Employees</button>
+      <button className="btn blue" onClick={exportOTExcelFiltered}>Export OT</button>
+      <button className="btn blue" onClick={exportLeaveExcelFiltered}>Export Leave</button>
+    </div>
+  </section>
 )}
 
     </main>
