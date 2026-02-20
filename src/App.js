@@ -5539,8 +5539,8 @@ const leaveSummaryUids = Object.keys(usersMap || {})
       <button className="btn blue" onClick={exportOTExcelFiltered}>Export OT</button>
       <button className="btn blue" onClick={exportLeaveExcelFiltered}>Export Leave</button>
     </div>
-  </section>
-)}
+    </section>
+  )}
 
     </main>
     </div>
