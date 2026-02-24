@@ -3182,6 +3182,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-po");setSidebarOpen(false);}}><span className="icon">💼</span>All Staff P/O Reports</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-ot");setSidebarOpen(false);}}><span className="icon">⏫</span>All Overtime Requests</button>
         
+        <div className="sidebar-section-title" style={{color:"#0ea5e9",fontWeight:"bold"}}>Payroll Management</div>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-summary");setSidebarOpen(false);}}><span className="icon">📅</span>Monthly Summary</button>
          {/* 🔐 Payroll – ADMIN ONLY */}
         {canAccessPayroll && (
