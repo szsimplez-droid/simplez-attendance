@@ -3170,7 +3170,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
         <button  className="nav-item" onClick={() => {setActiveSidebar("admin-employee");setSidebarOpen(false);}}><span className="icon">👥</span> Employee List</button>
         <div className="sidebar-section-title" style={{color:"#0ea5e9",fontWeight:"bold"}}>Attendance Management</div>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-att-overview"); setSidebarOpen(false);}}><span className="icon">🗓️</span> Attendance Overview</button>
-        <button className="nav-item" onClick={() => {setActiveSidebar("admin-company-calendar"); setSidebarOpen(false);}}><span className="icon">🎌</span> Company Calendar</button>
+        <button className="nav-item" onClick={() => {setActiveSidebar("admin-company-calendar"); setSidebarOpen(false);}}><span className="icon"><img src="https://flagcdn.com/16x12/mm.png" srcset="https://flagcdn.com/32x24/mm.png 2x, https://flagcdn.com/48x36/mm.png 3x"width="16"height="12"  alt="Myanmar"/></span> Company Calendar</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-att");setSidebarOpen(false);}}><span className="icon">📊</span> All Attendance</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-att-summary");setSidebarOpen(false);}}><span className="icon">📊</span> Monthly Attendance Summary</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-leave");setSidebarOpen(false);}}><span className="icon">📄</span>All Leave Requests</button>
@@ -4508,7 +4508,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
 
                   {isHoliday && (
                     <div style={{ marginTop: 6, color: "#b91c1c", fontWeight: 700, fontSize: 12 }}>
-                      🎌 {holidayMap[dateStr]?.name}
+                      <img src="https://flagcdn.com/16x12/mm.png" srcset="https://flagcdn.com/32x24/mm.png 2x, https://flagcdn.com/48x36/mm.png 3x"width="16"height="12"  alt="Myanmar"/> {holidayMap[dateStr]?.name}
                     </div>
                   )}
 
