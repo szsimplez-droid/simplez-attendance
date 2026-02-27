@@ -58,6 +58,62 @@ body {
   color: white;
 }
 
+.mem_att_table,.mem_ot_table,.mem_leave_table {
+  display: flex;
+  justify-content: space-between;
+  align-items: self-start; 
+  margin-bottom: 12px;
+}
+
+.mem_att_table input,.mem_ot_table input {
+  width: 60%;
+}
+
+.mem_att_table input[type="month"],.mem_ot_table input[type="month"] {
+  width: 20%;
+}
+
+.mem_leave_table input {
+  width: 40%;
+}
+
+.mem_leave_table input[type="date"]{ 
+  width: 30%;
+}
+
+.flex-date {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 12px;
+  width: 46%;
+}
+
+@media (max-width: 768px) {
+  .mem_att_table, .mem_ot_table,.mem_leave_table {
+    display: block;
+    margin-bottom: 12px;
+}
+
+.mem_att_table input ,.mem_ot_table input,.mem_leave_table input {
+  width: 95%;
+}
+
+.mem_att_table input[type="month"],
+.mem_ot_table input[type="month"] {
+  width: 95%;
+}
+
+  .mem_leave_table input[type="date"]{ 
+  width: 32%;
+  margin-right: 5px;
+}
+
+  .flex-date {
+    width: 100%;
+  }
+}
+
 /* ---------- MAIN CONTENT ---------- */
 .main {
   flex: 1;

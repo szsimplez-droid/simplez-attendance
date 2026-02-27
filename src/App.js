@@ -1880,7 +1880,7 @@ const resetFilters = () => {
 
 const safe = (v) => (v || "").toString().toLowerCase();
 
-const filteredMemberAttendance = leaderAttendance.filter(row => {
+/* const filteredMemberAttendance = leaderAttendance.filter(row => {
   const name = usersMap[row.userId]?.name;   // real source
   const matchName = safe(name).includes(safe(nameFilter));
 
@@ -1888,6 +1888,25 @@ const filteredMemberAttendance = leaderAttendance.filter(row => {
     dateFilter === "" || row.date === dateFilter;
 
   return matchName && matchDate;
+}); */
+
+const getCurrentMonth = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+};
+
+const [monthFilter, setMonthFilter] = useState(getCurrentMonth());
+
+const filteredMemberAttendance = leaderAttendance.filter(row => {
+  const name = usersMap[row.userId]?.name;
+  const matchName = safe(name).includes(safe(nameFilter));
+
+  const matchMonth =
+    monthFilter === "" || row.date.startsWith(monthFilter);
+
+  return matchName && matchMonth;
 });
 
 const filteredMemberLeaves = leaderLeaves.filter(row => {
@@ -1915,31 +1934,11 @@ const filteredMemberOT = leaderOvertime.filter(row => {
   const name = usersMap[row.userId]?.name;
   const matchName = safe(name).includes(safe(nameFilter));
 
-  const matchDate =
-    dateFilter === "" || row.date === dateFilter;
+  const matchMonth =
+    monthFilter === "" || row.date.startsWith(monthFilter);
 
-  return matchName && matchDate;
+  return matchName && matchMonth;
 });
-
-/* const filteredAllMemberLeaves = allLeaves.filter(row => {
-  // ---------- Name filter ----------
-  const name = usersMap[row.userId]?.name;
-  const matchName = safe(name).includes(safe(nameFilter));
-
-  // ---------- Date range filter ----------
-  if (!fromDate && !toDate) return matchName;
-
-  const rowStart = new Date(row.startDate);
-  const rowEnd = new Date(row.endDate);
-  const filterFrom = fromDate ? new Date(fromDate) : null;
-  const filterTo = toDate ? new Date(toDate) : null;
-
-  // overlap logic
-  if (filterFrom && rowEnd < filterFrom) return false;
-  if (filterTo && rowStart > filterTo) return false;
-
-  return matchName;
-}); */
 
 const filteredAllMemberLeaves = allLeaves.filter((row) => {
   const name = usersMap[row.userId]?.name;
@@ -1976,16 +1975,6 @@ useEffect(() => {
 }, []);
 
 
-/* const filteredAllMemberOT = allOvertime.filter(row => {
-  const name = usersMap[row.userId]?.name;
-  const matchName = safe(name).includes(safe(nameFilter));
-
-  const matchDate =
-    dateFilter === "" || row.date === dateFilter;
-
-  return matchName && matchDate;
-}); */
-
 const filteredAllMemberOT = allOvertime.filter((row) => {
   const name = usersMap[row.userId]?.name;
   const matchName = safe(name).includes(safe(nameFilter));
@@ -2013,19 +2002,6 @@ const leaderUpdateAttendanceTime = async () => {
       ? makeISOFromDateAndTimeYangon(editingLeaderAttendance.date, leaderEditOut)
       : null;
 
-    /* await updateDoc(doc(db, "attendance", editingLeaderAttendance.id), {
-      clockIn: clockInISO,
-      clockInTime: leaderEditIn || null,
-      clockOut: clockOutISO,
-      clockOutTime: leaderEditOut || null,
-      editedByLeader: user.uid,
-      editedAt: new Date().toISOString(),
-    });
-
-    notify("✅ Attendance updated by Leader");
-    setEditingLeaderAttendance(null);
-    setLeaderEditIn("");
-    setLeaderEditOut(""); */
 
     await updateDoc(doc(db, "attendance", editingLeaderAttendance.id), {
       clockIn: clockInISO,
@@ -3173,17 +3149,18 @@ const leaveSummaryUids = Object.keys(usersMap || {})
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-company-calendar"); setSidebarOpen(false);}}><span className="icon"><img src="https://flagcdn.com/16x12/mm.png" srcset="https://flagcdn.com/32x24/mm.png 2x, https://flagcdn.com/48x36/mm.png 3x"width="16"height="12"  alt="Myanmar"/></span> Company Calendar</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-att");setSidebarOpen(false);}}><span className="icon">📊</span> All Attendance</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-att-summary");setSidebarOpen(false);}}><span className="icon">📊</span> Monthly Attendance Summary</button>
-        <button className="nav-item" onClick={() => {setActiveSidebar("admin-leave");setSidebarOpen(false);}}><span className="icon">📄</span>All Leave Requests</button>
+         <button className="nav-item" onClick={() => {setActiveSidebar("admin-summary");setSidebarOpen(false);}}><span className="icon">📅</span>Monthly Summary</button>
+        
 
         <div className="sidebar-section-title" style={{color:"#0ea5e9",fontWeight:"bold"}}>Leave Management</div>
+        <button className="nav-item" onClick={() => {setActiveSidebar("admin-leave");setSidebarOpen(false);}}><span className="icon">📄</span>All Leave Requests</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-leave-balance");setSidebarOpen(false);}}><span className="icon">📊</span> Leave Balance Management</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-leave-summary");setSidebarOpen(false);}}><span className="icon">📝</span>All Staff Leave Summary</button>
-        <button className="nav-item" onClick={() => {setActiveSidebar("admin-summary");setSidebarOpen(false);}}><span className="icon">📅</span>Monthly Summary</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-po");setSidebarOpen(false);}}><span className="icon">💼</span>All Staff P/O Reports</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-ot");setSidebarOpen(false);}}><span className="icon">⏫</span>All Overtime Requests</button>
         
         <div className="sidebar-section-title" style={{color:"#0ea5e9",fontWeight:"bold"}}>Payroll Management</div>
-        <button className="nav-item" onClick={() => {setActiveSidebar("admin-summary");setSidebarOpen(false);}}><span className="icon">📅</span>Monthly Summary</button>
+    
          {/* 🔐 Payroll – ADMIN ONLY */}
         {canAccessPayroll && (
           <>
@@ -3211,6 +3188,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
 
         <div style={{marginTop:20}}>
         <button className="btn out" onClick={handleLogout}>Logout</button>
+        <p>Copyright 2026 Simple'Z All right reserved.</p>
         </div>
       </div>
 
@@ -3583,19 +3561,18 @@ const leaveSummaryUids = Object.keys(usersMap || {})
   <div className="section admin">
     <h2>My Members Attendance</h2>
       
-    <div className="filters" style={{ display: "flex", gap: 10, alignItems: "self-start", marginBottom: 12 }}>
+    <div className="filters mem_att_table">
       <input
         type="text"
         placeholder="Search by name"
         value={nameFilter}
         onChange={(e) => setNameFilter(e.target.value)}
-        style={{ flex: 1 }}
       />
 
-      <input
-        type="date"
-        value={dateFilter}
-        onChange={(e) => setDateFilter(e.target.value)}
+       <input
+        type="month"
+        value={monthFilter}
+        onChange={(e) => setMonthFilter(e.target.value)}
       />
       <button className="btn" onClick={resetFilters}>Reset</button>
     </div>
@@ -3683,15 +3660,15 @@ const leaveSummaryUids = Object.keys(usersMap || {})
   <div className="section admin">
     <h2>My Members Leave Requests</h2>
 
-     <div className="filters" style={{ display: "flex", gap: 10, alignItems: "self-start", marginBottom: 12 }}>
+     <div className="filters mem_leave_table">
               <input
                 type="text"
                 placeholder="Search by name"
                 value={nameFilter}
                 onChange={(e) => setNameFilter(e.target.value)}
-                style={{ flex: 1 }}
+               
               />
-              <div style={{ display: "flex", gap: 10, alignItems: "baseline", marginBottom: 12 }}>
+              <div className="flex-date">
                <label>Start Date</label>
              <input
                 type="date"
@@ -3728,6 +3705,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
               <td>{lv.reason}</td>
               <td>{colorStatus(lv.status)}</td>
               <td>
+                <div style={{display: "flex", justifyContent:"start", gap: 2}}>
                 <button
                   className="btn small"
                   onClick={() => leaderUpdateLeaveStatus(lv.id, "approved", lv.userId)}
@@ -3736,6 +3714,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                   className="btn small red"
                   onClick={() => leaderUpdateLeaveStatus(lv.id, "rejected", lv.userId)}
                 >❌</button>
+                </div>
               </td>
             </tr>
           ))
@@ -3751,19 +3730,19 @@ const leaveSummaryUids = Object.keys(usersMap || {})
   <div className="section admin">
     <h2>My Members Overtime Requests</h2>
 
-    <div className="filters" style={{ display: "flex", gap: 10, alignItems: "self-start", marginBottom: 12 }}>
+    <div className="filters mem_ot_table">
       <input
         type="text"
         placeholder="Search by name"
         value={nameFilter}
         onChange={(e) => setNameFilter(e.target.value)}
-        style={{ flex: 1 }}
+       
       />
 
-      <input
-        type="date"
-        value={dateFilter}
-        onChange={(e) => setDateFilter(e.target.value)}
+     <input
+        type="month"
+        value={monthFilter}
+        onChange={(e) => setMonthFilter(e.target.value)}
       />
       <button className="btn" onClick={resetFilters}>Reset</button>
     </div>
@@ -3787,6 +3766,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
               <td>{ot.reason}</td>
               <td>{colorStatus(ot.status)}</td>
               <td>
+                <div style={{display: "flex", justifyContent:"start", gap: 2}}>
                 <button
                   className="btn small"
                   onClick={() => leaderUpdateOvertimeStatus(ot.id, "approved", ot.userId)}
@@ -3795,6 +3775,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                   className="btn small red"
                   onClick={() => leaderUpdateOvertimeStatus(ot.id, "rejected", ot.userId)}
                 >❌</button>
+                </div>
               </td>
             </tr>
           ))
