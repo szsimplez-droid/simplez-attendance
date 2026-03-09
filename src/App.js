@@ -499,6 +499,7 @@ const createEmployeeSecondaryAuth = async () => {
 
   /* for emplyee management search */
   const [employeeSearch, setEmployeeSearch] = useState("");
+  const [gpsSettingSearch, setGpsSettingSearch] = useState("");
 
   const filteredEmployeeslocation = employees
   .filter((emp) => {
