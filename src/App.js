@@ -58,6 +58,17 @@ const notify = (text) => {
   setTimeout(() => div.remove(), 3000);
 };
 
+const ATTENDANCE_LOCATION_MODES = [
+  { value: "required", label: "GPS Required" },
+  { value: "optional", label: "GPS Optional" },
+  { value: "disabled", label: "GPS Disabled" },
+];
+
+const getAttendanceLocationModeValue = (data = {}) => {
+  const mode = String(data?.attendanceLocationMode || "required").toLowerCase();
+  if (["required", "optional", "disabled"].includes(mode)) return mode;
+  return "required";
+};
 
 // secondary auth init (OUTSIDE App)
 const secondaryApp =
@@ -516,7 +527,30 @@ const createEmployeeSecondaryAuth = async () => {
   });
 
 
+const filteredGpsSettingEmployees = employees
+  .filter((emp) => {
+    const q = gpsSettingSearch.trim().toLowerCase();
+    if (!q) return true;
 
+    return (
+      (emp.eid || "").toLowerCase().includes(q) ||
+      (emp.name || "").toLowerCase().includes(q) ||
+      (emp.email || "").toLowerCase().includes(q) ||
+      (emp.department || "").toLowerCase().includes(q) ||
+      (emp.designation || "").toLowerCase().includes(q) ||
+      (emp.myanmarName || "").toLowerCase().includes(q)
+    );
+  })
+  .sort((a, b) => {
+    const eidA = (a.eid || "").toLowerCase();
+    const eidB = (b.eid || "").toLowerCase();
+
+    if (!eidA && !eidB) return 0;
+    if (!eidA) return 1;
+    if (!eidB) return -1;
+
+    return eidA.localeCompare(eidB, undefined, { numeric: true });
+  });
 
 
   const chunk = (arr, size) => {
@@ -1335,11 +1369,18 @@ const checkLocationRange = async () => {
   if (!user) return setWithinRange(false);
   try {
     const ud = await getDoc(doc(db, "users", user.uid));
-    const saved = ud.exists() ? ud.data().location : null;
+    const userData = ud.exists() ? ud.data() : {};
+    const mode = getAttendanceLocationModeValue(userData);
+    const saved = userData?.location || null;
     setUserSavedLocation(saved || null);
-    if (!saved) return setWithinRange(false);
 
-    if (!navigator.geolocation) return setWithinRange(false);
+    if (mode === "disabled") {
+      setWithinRange(true);
+      return;
+    }
+
+    if (!saved) return setWithinRange(false);
+    if (!navigator.geolocation) return setWithinRange(mode === "optional");
 
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -1355,7 +1396,7 @@ const checkLocationRange = async () => {
       },
       (err) => {
         console.error("Geo check error", err);
-        setWithinRange(false);
+        setWithinRange(mode === "optional");
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
@@ -1381,48 +1422,53 @@ const checkLocationRange = async () => {
  // ---------------- Clock In / Out ----------------
    const clockIn = async () => {
      if (!user) return notify("Login required");
-     const ud = await getDoc(doc(db, "users", user.uid));
-     const locations = ud.exists() ? ud.data().locations : [];
-     if (!locations || locations.length === 0) return notify("No saved locations. Ask admin to add them.");
- 
-     if (!navigator.geolocation) return notify("Geolocation not supported.");
-     navigator.geolocation.getCurrentPosition(async (pos) => {
-       const { latitude, longitude } = pos.coords;
-       const matchedName = isWithinRangeOfAny(latitude, longitude, locations);
-       if (!matchedName) return notify("🚫 Too far from any registered location.");
- 
+
+     try {
+       const ud = await getDoc(doc(db, "users", user.uid));
+       const userData = ud.exists() ? ud.data() : {};
+       const locationMode = getAttendanceLocationModeValue(userData);
+       const locationResult = await getAttendanceLocationPayload(userData, locationMode, "clock in");
+       if (!locationResult.allowed) return notify(locationResult.message);
+
        const today = getTodayDateYangon();
        const q = query(collection(db, "attendance"), where("userId", "==", user.uid), where("date", "==", today));
        const snap = await getDocs(q);
        if (!snap.empty) return notify("⚠️ Already clocked in today.");
- 
+
        await addDoc(collection(db, "attendance"), {
         userId: user.uid,
         date: today,
-        clockIn: new Date().toISOString(),          // ✅ UTC ISO
-        clockInTime: getMyanmarTimeString(),        // ✅ readable Myanmar time
-        locationName: matchedName,
-         locationIn: { latitude, longitude },
+        clockIn: new Date().toISOString(),
+        clockInTime: getMyanmarTimeString(),
+        locationName: locationResult.locationName || "",
+        locationIn: locationResult.locationData,
+        attendanceLocationMode: locationMode,
        });
 
-      /*  setClockedIn(true); */
-       notify(`✅ Clock In recorded at ${matchedName}`);
+       const successMsg = locationResult.locationName
+         ? `✅ Clock In recorded at ${locationResult.locationName}`
+         : locationMode === "disabled"
+         ? "✅ Clock In recorded without GPS."
+         : "✅ Clock In recorded. GPS was skipped.";
+
+       notify(successMsg);
        loadAttendance(user.uid);
        if (isAdmin) loadAllAttendance();
-     }, (err) => notify("Unable to get location: " + err.message));
+     } catch (err) {
+       console.error(err);
+       notify("❌ Clock In failed: " + err.message);
+     }
    };
  
    const clockOut = async () => {
      if (!user) return notify("Login required");
-     const ud = await getDoc(doc(db, "users", user.uid));
-     const locations = ud.exists() ? ud.data().locations : [];
-     if (!locations || locations.length === 0) return notify("No saved locations. Ask admin to add them.");
- 
-     if (!navigator.geolocation) return notify("Geolocation not supported.");
-     navigator.geolocation.getCurrentPosition(async (pos) => {
-       const { latitude, longitude } = pos.coords;
-       const matchedName = isWithinRangeOfAny(latitude, longitude, locations);
-       if (!matchedName) return notify("🚫 Too far from any registered location.");
+
+     try {
+       const ud = await getDoc(doc(db, "users", user.uid));
+       const userData = ud.exists() ? ud.data() : {};
+       const locationMode = getAttendanceLocationModeValue(userData);
+       const locationResult = await getAttendanceLocationPayload(userData, locationMode, "clock out");
+       if (!locationResult.allowed) return notify(locationResult.message);
  
        const today = getTodayDateYangon();
        const q = query(collection(db, "attendance"), where("userId", "==", user.uid), where("date", "==", today));
@@ -1432,15 +1478,24 @@ const checkLocationRange = async () => {
        await updateDoc(doc(db, "attendance", attDoc.id), {
         clockOut: new Date().toISOString(),
         clockOutTime: getMyanmarTimeString(),
-        locationName: matchedName,
-        locationOut: { latitude, longitude },
+        locationName: locationResult.locationName || attDoc.data()?.locationName || "",
+        locationOut: locationResult.locationData,
+        attendanceLocationMode: locationMode,
       });
 
-      /*  setClockedIn(false); */
-       notify(`✅ Clock Out recorded at ${matchedName}`);
+       const successMsg = locationResult.locationName
+         ? `✅ Clock Out recorded at ${locationResult.locationName}`
+         : locationMode === "disabled"
+         ? "✅ Clock Out recorded without GPS."
+         : "✅ Clock Out recorded. GPS was skipped.";
+
+       notify(successMsg);
        loadAttendance(user.uid);
        if (isAdmin) loadAllAttendance();
-     }, (err) => notify("Unable to get location: " + err.message));
+     } catch (err) {
+       console.error(err);
+       notify("❌ Clock Out failed: " + err.message);
+     }
    };
 
 
@@ -1461,13 +1516,19 @@ const checkLocationRange = async () => {
   const [bulkOverwrite, setBulkOverwrite] = useState(false); // usually false
 
 
-  const openCreateAttendance = () => {
-    setSelectedUserId("");
-    setCreateDate("");
+  const openCreateAttendance = (prefillUserId = "", prefillDate = "") => {
+    setSelectedUserId(prefillUserId || "");
+    setCreateDate(prefillDate || "");
     setCreateIn("");
     setCreateOut("");
     setCreateLocationName("");
     setCreatingAttendance(true);
+  };
+
+  const openEditAttendance = (att) => {
+    setEditingAttendance(att);
+    setEditClockIn(att?.clockInTime || (att?.clockIn ? toMyanmarTime(att.clockIn) : ""));
+    setEditClockOut(att?.clockOutTime || (att?.clockOut ? toMyanmarTime(att.clockOut) : ""));
   };
 
 
@@ -2137,6 +2198,116 @@ const leaderUpdateAttendanceTime = async () => {
      notify("✅ Locations saved successfully.");
      loadAllUsers();
    };
+
+   const saveEmployeeGpsSetting = async (emp) => {
+        try {
+          const attendanceLocationMode = getAttendanceLocationModeValue(emp);
+          await updateDoc(doc(db, "users", emp.id), { attendanceLocationMode });
+          notify("✅ GPS setting saved successfully.");
+          loadEmployees();
+          loadAllUsers();
+        } catch (err) {
+          console.error(err);
+          notify("❌ Cannot save GPS setting: " + err.message);
+        }
+      };
+   
+      const getGeoPosition = () =>
+        new Promise((resolve, reject) => {
+          if (!navigator.geolocation) {
+            reject(new Error("Geolocation not supported."));
+            return;
+          }
+   
+          navigator.geolocation.getCurrentPosition(
+            (pos) => resolve(pos),
+            (err) => reject(err),
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+          );
+        });
+   
+      const getAttendanceLocationPayload = async (userDocData, mode, actionLabel) => {
+        const normalizedMode = getAttendanceLocationModeValue({ attendanceLocationMode: mode });
+        const locations = userDocData?.locations || [];
+   
+        if (normalizedMode === "disabled") {
+          return {
+            allowed: true,
+            locationName: "",
+            locationData: null,
+          };
+        }
+   
+        if (!navigator.geolocation) {
+          if (normalizedMode === "optional") {
+            return {
+              allowed: true,
+              locationName: "",
+              locationData: null,
+            };
+          }
+   
+          return {
+            allowed: false,
+            message: "Geolocation not supported.",
+          };
+        }
+   
+        if (!locations || locations.length === 0) {
+          if (normalizedMode === "optional") {
+            return {
+              allowed: true,
+              locationName: "",
+              locationData: null,
+            };
+          }
+   
+          return {
+            allowed: false,
+            message: "No saved locations. Ask admin to add them.",
+          };
+        }
+   
+        try {
+          const pos = await getGeoPosition();
+          const { latitude, longitude } = pos.coords;
+          const matchedName = isWithinRangeOfAny(latitude, longitude, locations);
+   
+          if (!matchedName && normalizedMode === "required") {
+            return {
+              allowed: false,
+              message: `🚫 Too far from any registered location for ${actionLabel}.`,
+            };
+          }
+   
+          if (!matchedName && normalizedMode === "optional") {
+            return {
+              allowed: true,
+              locationName: "",
+              locationData: null,
+            };
+          }
+   
+          return {
+            allowed: true,
+            locationName: matchedName || "",
+            locationData: matchedName ? { latitude, longitude } : null,
+          };
+        } catch (err) {
+          if (normalizedMode === "optional") {
+            return {
+              allowed: true,
+              locationName: "",
+              locationData: null,
+            };
+          }
+   
+          return {
+            allowed: false,
+            message: "Unable to get location: " + err.message,
+          };
+        }
+      };
 
   /* ---------------- leave & overtime (staff) ---------------- */
   const applyLeave = async () => {
@@ -3144,12 +3315,13 @@ const leaveSummaryUids = Object.keys(usersMap || {})
         <button className="nav-item" onClick={() => { setActiveSidebar("admin-employee-form"); setSidebarOpen(false); }}><span className="icon">🧾</span> Employee Information</button>
          )}
         <button  className="nav-item" onClick={() => {setActiveSidebar("admin-employee");setSidebarOpen(false);}}><span className="icon">👥</span> Employee List</button>
+        <button className="nav-item" onClick={() => {setActiveSidebar("admin-gps-setting");setSidebarOpen(false);}}><span className="icon">📍</span> Staff GPS Setting</button>
         <div className="sidebar-section-title" style={{color:"#0ea5e9",fontWeight:"bold"}}>Attendance Management</div>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-att-overview"); setSidebarOpen(false);}}><span className="icon">🗓️</span> Attendance Overview</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-company-calendar"); setSidebarOpen(false);}}><span className="icon"><img src="https://flagcdn.com/16x12/mm.png" srcset="https://flagcdn.com/32x24/mm.png 2x, https://flagcdn.com/48x36/mm.png 3x"width="16"height="12"  alt="Myanmar"/></span> Company Calendar</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-att");setSidebarOpen(false);}}><span className="icon">📊</span> All Attendance</button>
         <button className="nav-item" onClick={() => {setActiveSidebar("admin-att-summary");setSidebarOpen(false);}}><span className="icon">📊</span> Monthly Attendance Summary</button>
-         <button className="nav-item" onClick={() => {setActiveSidebar("admin-summary");setSidebarOpen(false);}}><span className="icon">📅</span>Monthly Summary</button>
+        {/*  <button className="nav-item" onClick={() => {setActiveSidebar("admin-summary");setSidebarOpen(false);}}><span className="icon">📅</span>Monthly Summary</button> */}
         
 
         <div className="sidebar-section-title" style={{color:"#0ea5e9",fontWeight:"bold"}}>Leave Management</div>
@@ -4377,6 +4549,87 @@ const leaveSummaryUids = Object.keys(usersMap || {})
   </section>
 )}
 
+      {isAdmin && activeSidebar === "admin-gps-setting" && (
+  <section className="card">
+    <h2>Staff GPS Setting</h2>
+
+    <div style={{ display: "flex", gap: 10, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
+      <input
+        type="text"
+        placeholder="Search by ID, name, email, department..."
+        value={gpsSettingSearch}
+        onChange={(e) => setGpsSettingSearch(e.target.value)}
+        style={{ flex: 1, minWidth: 240 }}
+      />
+      <button className="btn small" onClick={() => setGpsSettingSearch("")}>Clear</button>
+    </div>
+
+    <div style={{ marginBottom: 12, background: "#f8fafc", border: "1px solid #e5e7eb", padding: 12, borderRadius: 10 }}>
+      <div><b>GPS Required</b> → must detect location</div>
+      <div><b>GPS Optional</b> → try GPS first, but allow clock in/out if location fails</div>
+      <div><b>GPS Disabled</b> → do not request GPS</div>
+    </div>
+
+    <table className="data-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Department</th>
+          <th>Current Mode</th>
+          <th>Saved Locations</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {filteredGpsSettingEmployees.length === 0 ? (
+          <tr><td colSpan="7">No staff found</td></tr>
+        ) : (
+          filteredGpsSettingEmployees.map((emp) => {
+            const currentMode = getAttendanceLocationModeValue(emp);
+            return (
+              <tr key={emp.id}>
+                <td>{emp.eid || "-"}</td>
+                <td>{emp.name || "-"}</td>
+                <td>{emp.email || "-"}</td>
+                <td>{emp.department || emp.team || "-"}</td>
+                <td>
+                  <select
+                    value={currentMode}
+                    onChange={(e) => {
+                      const nextMode = e.target.value;
+                      setEmployees((prev) =>
+                        prev.map((x) =>
+                          x.id === emp.id ? { ...x, attendanceLocationMode: nextMode } : x
+                        )
+                      );
+                    }}
+                  >
+                    {ATTENDANCE_LOCATION_MODES.map((mode) => (
+                      <option key={mode.value} value={mode.value}>{mode.label}</option>
+                    ))}
+                  </select>
+                </td>
+                <td>
+                  {(emp.locations || []).filter((loc) => loc?.name).length > 0
+                    ? (emp.locations || []).filter((loc) => loc?.name).map((loc) => loc.name).join(", ")
+                    : "—"}
+                </td>
+                <td>
+                  <button className="btn small blue" onClick={() => saveEmployeeGpsSetting(emp)}>
+                    💾 Save
+                  </button>
+                </td>
+              </tr>
+            );
+          })
+        )}
+      </tbody>
+    </table>
+  </section>
+)}
+
         {isAdmin && activeSidebar === "admin-company-calendar" && (
         <section className="card">
         <h2>Company Calendar (Holidays)</h2>
@@ -4426,7 +4679,8 @@ const leaveSummaryUids = Object.keys(usersMap || {})
         <section className="card">
         <h2>Attendance Overview (Calendar)</h2>
 
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <label style={{ fontWeight: 600 }}>Month:</label>
         <input type="month" value={overviewMonth} onChange={(e) => setOverviewMonth(e.target.value)} />
 
@@ -4442,6 +4696,24 @@ const leaveSummaryUids = Object.keys(usersMap || {})
           ))}
         </select>
         </div>
+
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <button className="btn" onClick={() => { setOverviewUserId(""); setOverviewMonth(attendanceMonth || overviewMonth); }}>
+              Clear
+            </button>
+            <button
+              className="btn blue"
+              disabled={!overviewUserId}
+              style={{ opacity: !overviewUserId ? 0.6 : 1, cursor: !overviewUserId ? "not-allowed" : "pointer" }}
+              onClick={() => {
+                if (!overviewUserId) return;
+                openCreateAttendance(overviewUserId);
+              }}
+            >
+              ➕ Add Attendance
+            </button>
+          </div>
+          </div>
 
         {!overviewUserId ? (
         <div>Please select a staff.</div>
@@ -4498,6 +4770,22 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                     <div><b>IN:</b> {att?.clockInTime || "—"}</div>
                     <div><b>OUT:</b> {att?.clockOutTime || "—"}</div>
                   </div>
+
+                  <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
+                        <button
+                          className="btn small blue"
+                          onClick={() => {
+                            if (att) {
+                              openEditAttendance(att);
+                            } else {
+                              openCreateAttendance(overviewUserId, dateStr);
+                            }
+                          }}
+                        >
+                          {att ? "✏ Edit" : "➕ Add"}
+                        </button>
+                  </div>
+
                 </div>
               );
             })}
@@ -4568,11 +4856,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                       <td>{a.locationIn ? <a href={`https://maps.google.com/?q=${a.locationIn.latitude},${a.locationIn.longitude}`} target="_blank" rel="noreferrer">📍 View</a> : "-"}</td>
                       <td>{a.locationOut ? <a href={`https://maps.google.com/?q=${a.locationOut.latitude},${a.locationOut.longitude}`} target="_blank" rel="noreferrer">📍 View</a> : "-"}</td>
                       <td>
-                      <button className="btn small blue" onClick={() => {setEditingAttendance(a);
-                          setEditClockIn(a.clockIn ? toMyanmarTime(a.clockIn) : "");
-                          setEditClockOut(a.clockOut ? toMyanmarTime(a.clockOut) : "");
-                        }}
-                      >
+                     <button className="btn small blue" onClick={() => openEditAttendance(a)}>
                         ✏ Edit
                       </button>
                       </td>
@@ -4582,6 +4866,8 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                 }
               </tbody>
             </table>
+             </section>
+        )}
 
             {editingAttendance && (
               <div className="modal-overlay" onClick={() => setEditingAttendance(null)}>
@@ -4636,14 +4922,16 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                     {/* Staff select */}
                     <div>
                        <label style={{ fontWeight: 600 }}>Select employee</label>
-                      <select value={selectedUserId} onChange={(e) => setSelectedUserId(e.target.value)}>
+                       <select value={selectedUserId} onChange={(e) => setSelectedUserId(e.target.value)}>
                       <option value="">Select employee</option>
-                      {Object.keys(usersMap).map((uid) => (
-                        <option key={uid} value={uid}>
-                          {displayUser(uid)} ({usersMap[uid]?.eid || ""})
-                        </option>
-                      ))}
-                    </select>
+                      {Object.keys(usersMap)
+                        .sort((a, b) => (usersMap[a]?.eid || "").localeCompare(usersMap[b]?.eid || ""))
+                        .map((uid) => (
+                          <option key={uid} value={uid}>
+                            {(usersMap[uid]?.eid || "-")} - {displayUser(uid)}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     
                     {/* Date */}
@@ -4686,10 +4974,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                 </div>
               )}
 
-          </section>
-        )}
-
-         {isAdmin && activeSidebar==="admin-att-summary" && (
+           {isAdmin && activeSidebar==="admin-att-summary" && (
             <section className="card" style={{ marginTop: 18 }}>
               <h2>Monthly Attendance Summary ({attendanceMonth})</h2>
 
