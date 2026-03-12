@@ -74,45 +74,213 @@ body {
 }
 
 .mem_leave_table input {
-  width: 40%;
+  width: 50%;
 }
 
 .mem_leave_table input[type="date"]{ 
-  width: 30%;
+  width: 55%;
+    margin-left: 10px;
 }
 
 .flex-date {
   display: flex;
+  align-items: baseline;
+  margin-bottom: 12px;
+  width: 22%;
+  margin-left: 20px;
+}
+
+.att_overview {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.att_overview_flex {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-around;
+}
+.att_overview_flex label {
+  margin-bottom: 10px;
+}
+.att_overview_flex.w18 {
+  width: 18%;
+}
+.att_overview_flex.w60 {
+  width: 60%;
+}
+.att_overview_flex.w20 {
+  width: 20%;
+}
+.emp_info {
+display: flex;
+align-items: baseline;
+margin-bottom: 12px;
+justify-content: space-between;
+}
+.emp_info input {
+  width: 50%;
+}
+.emp_info .btn {
+  width: 20%;
+}
+.emp_info .btn.blue {
+   background-color: #4b6876;
+}
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+}
+
+.calendar-card{
+  border:1px solid #e5e7eb;
+  border-radius:10px;
+  padding:10px;
+  min-height:92px;
+  background:white;
+}
+
+.weekday-mobile{
+  display:none;
+}
+.pc_dayname {
+  font-weight: 800;
+  opacity: 0.7;
+}
+
+.staff_att_container {
+  display: flex;
+  justify-content: space-between;
+   align-items: center;
+}
+.staff_att_UI {
+  display: flex;
   justify-content: space-between;
   align-items: baseline;
   margin-bottom: 12px;
-  width: 46%;
+  width: 100%;
+}
+ .staff_att_UI  input,.all_leave_req  input,.all_ot_req input {
+    width: 50%;
+  }
+
+  .staff_att_UI input[type="month"],.all_ot_req input[type="month"],.all_ot_req input[type="date"] {
+    width: 20%;
+  }
+
+  .all_leave_req,.all_ot_req {
+    display: flex;
+    justify-content: space-between;
+    align-items: self-start;
+    margin-bottom: 12px;
+  }
+
+  .all_leave_req input[type="checkbox"],.all_ot_req input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+}
+
+
+  
+/* Tablet */
+@media (max-width: 1024px) {
+  .calendar-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
 }
 
 @media (max-width: 768px) {
-  .mem_att_table, .mem_ot_table,.mem_leave_table {
+  .mem_att_table, .mem_ot_table,.mem_leave_table,.att_overview,.att_overview_flex,.all_ot_req  {
     display: block;
     margin-bottom: 12px;
 }
 
-.mem_att_table input ,.mem_ot_table input,.mem_leave_table input {
-  width: 95%;
-}
+  .mem_att_table input ,.mem_ot_table input,.mem_leave_table input, .all_leave_req input,.all_ot_req input,.staff_att_UI  input,.staff_att_UI input[type="month"] {
+    width: 92%;
+  }
 
-.mem_att_table input[type="month"],
-.mem_ot_table input[type="month"] {
-  width: 95%;
-}
+  .mem_att_table input[type="month"],
+  .mem_ot_table input[type="month"],
+  .all_ot_req input[type="date"] {
+    width: 92%;
+  }
 
-  .mem_leave_table input[type="date"]{ 
-  width: 32%;
-  margin-right: 5px;
-}
-
-  .flex-date {
+    .mem_leave_table input[type="date"]{ 
     width: 100%;
   }
+
+  .flex-date {
+    width: 98%;
+    margin-left: 0;
+  }
+
+  .att_overview_flex label {
+    width: 74px;
+  }
+
+  .att_overview_flex.w18,.att_overview_flex.w60,.att_overview_flex.w20 {
+    width: 100%;
+  }
+
+  .emp_info {
+    display: block;
+  }
+
+  .emp_info input {
+    width: 92%;
+  }
+
+  .emp_info .btn {
+    width: 100%;
+  }
+
+  .calendar-card{
+    min-height:80px;
+    font-size:14px;
+  }
+
+  .calendar-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .pc_dayname {
+    display: none;
+  }
+
+  .weekday-mobile{
+    display:inline;
+    font-weight:700;
+    margin-right:6px;
+  }
+
+  .staff_att_container {
+    display: block;
+    
+  }
+
+  .staff_att_UI {
+    display: block;
+    width: 100%;
+  }
+
+  .all_leave_req {
+    display: block;
+   }
+
+  
 }
+
+/* Very small mobile */
+@media (max-width: 480px) {
+  .calendar-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 
 /* ---------- MAIN CONTENT ---------- */
 .main {
@@ -611,6 +779,7 @@ input[type="checkbox"] {
     width: 100%;
     font-size: 14px;
     padding: 10px;
+    margin-bottom: 10px;
   }
 
   .btn.in,
@@ -677,6 +846,7 @@ input[type="checkbox"] {
     background: #94a3b8;
     border-radius: 3px;
   }
+
 
   /* --------------------------
  DARK OVERLAY
@@ -913,6 +1083,9 @@ input[type="checkbox"] {
   padding-bottom: 5px;
 }
 
+ .form-section select {
+  width: 100%;
+ }
 .form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -927,7 +1100,7 @@ label {
 }
 
 input, select {
-  padding: 8px;
+  padding: 10px;
   border: 1px solid #cbd5e1;
   border-radius: 5px;
   margin-bottom: 10px;
@@ -1007,61 +1180,3 @@ div.colheaders{
 @media (max-width: 900px){
   .modal .form-grid { grid-template-columns: 1fr; }
 }
-
-
-
-
-
-
-
-/* .payroll-form {
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 20px;
-}
-
-.form-section {
-  background: #fff;
-  padding: 15px;
-  margin-bottom: 15px;
-  border-radius: 10px;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-}
-
-.form-section h2 {
-  margin-bottom: 10px;
-  color: #0ea5e9;
-  border-bottom: 2px solid #e2e8f0;
-  padding-bottom: 5px;
-}
-
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 10px;
-}
-
-.form-grid label {
-  display: flex;
-  flex-direction: column;
-  font-size: 14px;
-  color: #374151;
-}
-
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 10px;
-}
-
-.data-table th, .data-table td {
-  border: 1px solid #e2e8f0;
-  padding: 8px;
-  text-align: left;
-} */
-
-
-
-
-
-

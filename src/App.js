@@ -34,7 +34,9 @@ import {
 import "./App.css";
 import PayrollCalculator from "./PayrollCalculator";
 
-
+// sounds (place files in /public folder)
+const clickSound = new Audio("/click.mp3");
+const successSound = new Audio("/success.mp3");
 
 /* ---------------- helper: distance (meters) ---------------- */
 function getDistanceInMeters(lat1, lon1, lat2, lon2) {
@@ -83,6 +85,8 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [role, setRole] = useState("");
   const [roles, setRoles] = useState([]);
+
+   const [clockLoading, setClockLoading] = useState(false);
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -1423,80 +1427,148 @@ const checkLocationRange = async () => {
  // ---------------- Clock In / Out ----------------
    const clockIn = async () => {
      if (!user) return notify("Login required");
-
+   
+     if (clockLoading) return; // prevent double click
+   
+     setClockLoading(true);
+     clickSound.play();
+     notify("⏳ Recording Clock In...");
+   
      try {
+   
        const ud = await getDoc(doc(db, "users", user.uid));
        const userData = ud.exists() ? ud.data() : {};
+   
        const locationMode = getAttendanceLocationModeValue(userData);
-       const locationResult = await getAttendanceLocationPayload(userData, locationMode, "clock in");
-       if (!locationResult.allowed) return notify(locationResult.message);
-
+       const locationResult = await getAttendanceLocationPayload(
+         userData,
+         locationMode,
+         "clock in"
+       );
+   
+       if (!locationResult.allowed) {
+         setClockLoading(false);
+         return notify(locationResult.message);
+       }
+   
        const today = getTodayDateYangon();
-       const q = query(collection(db, "attendance"), where("userId", "==", user.uid), where("date", "==", today));
+   
+       const q = query(
+         collection(db, "attendance"),
+         where("userId", "==", user.uid),
+         where("date", "==", today)
+       );
+   
        const snap = await getDocs(q);
-       if (!snap.empty) return notify("⚠️ Already clocked in today.");
-
+   
+       if (!snap.empty) {
+         setClockLoading(false);
+         return notify("⚠️ Already clocked in today.");
+       }
+   
        await addDoc(collection(db, "attendance"), {
-        userId: user.uid,
-        date: today,
-        clockIn: new Date().toISOString(),
-        clockInTime: getMyanmarTimeString(),
-        locationName: locationResult.locationName || "",
-        locationIn: locationResult.locationData,
-        attendanceLocationMode: locationMode,
+         userId: user.uid,
+         date: today,
+         clockIn: new Date().toISOString(),
+         clockInTime: getMyanmarTimeString(),
+         locationName: locationResult.locationName || "",
+         locationIn: locationResult.locationData,
+         attendanceLocationMode: locationMode,
        });
-
+   
+       successSound.play();
+   
        const successMsg = locationResult.locationName
          ? `✅ Clock In recorded at ${locationResult.locationName}`
          : locationMode === "disabled"
          ? "✅ Clock In recorded without GPS."
          : "✅ Clock In recorded. GPS was skipped.";
-
+   
        notify(successMsg);
+   
        loadAttendance(user.uid);
        if (isAdmin) loadAllAttendance();
+   
      } catch (err) {
        console.error(err);
        notify("❌ Clock In failed: " + err.message);
      }
+   
+     setClockLoading(false);
    };
- 
+   
    const clockOut = async () => {
      if (!user) return notify("Login required");
-
+   
+     if (clockLoading) return;
+   
+     setClockLoading(true);
+     clickSound.play();
+     notify("⏳ Recording Clock Out...");
+   
      try {
+   
        const ud = await getDoc(doc(db, "users", user.uid));
        const userData = ud.exists() ? ud.data() : {};
+   
        const locationMode = getAttendanceLocationModeValue(userData);
-       const locationResult = await getAttendanceLocationPayload(userData, locationMode, "clock out");
-       if (!locationResult.allowed) return notify(locationResult.message);
- 
+   
+       const locationResult = await getAttendanceLocationPayload(
+         userData,
+         locationMode,
+         "clock out"
+       );
+   
+       if (!locationResult.allowed) {
+         setClockLoading(false);
+         return notify(locationResult.message);
+       }
+   
        const today = getTodayDateYangon();
-       const q = query(collection(db, "attendance"), where("userId", "==", user.uid), where("date", "==", today));
+   
+       const q = query(
+         collection(db, "attendance"),
+         where("userId", "==", user.uid),
+         where("date", "==", today)
+       );
+   
        const snap = await getDocs(q);
-       if (snap.empty) return notify("⚠️ You haven't clocked in today.");
+   
+       if (snap.empty) {
+         setClockLoading(false);
+         return notify("⚠️ You haven't clocked in today.");
+       }
+   
        const attDoc = snap.docs[0];
+   
        await updateDoc(doc(db, "attendance", attDoc.id), {
-        clockOut: new Date().toISOString(),
-        clockOutTime: getMyanmarTimeString(),
-        locationName: locationResult.locationName || attDoc.data()?.locationName || "",
-        locationOut: locationResult.locationData,
-        attendanceLocationMode: locationMode,
-      });
-
+         clockOut: new Date().toISOString(),
+         clockOutTime: getMyanmarTimeString(),
+         locationName:
+           locationResult.locationName || attDoc.data()?.locationName || "",
+         locationOut: locationResult.locationData,
+         attendanceLocationMode: locationMode,
+       });
+   
+       successSound.play();
+   
        const successMsg = locationResult.locationName
          ? `✅ Clock Out recorded at ${locationResult.locationName}`
          : locationMode === "disabled"
          ? "✅ Clock Out recorded without GPS."
          : "✅ Clock Out recorded. GPS was skipped.";
-
+   
        notify(successMsg);
+   
        loadAttendance(user.uid);
        if (isAdmin) loadAllAttendance();
+   
      } catch (err) {
        console.error(err);
        notify("❌ Clock Out failed: " + err.message);
      }
+   
+     setClockLoading(false);
    };
 
 
@@ -3295,7 +3367,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
 
       {isLeader && (
       <>
-      <div className="sidebar-section-title" style={{color:"#0ea5e9",fontWeight:"bold"}}>Leader Dashboard</div>
+      <div className="sidebar-section-title" style={{color:"#d7d8ff",fontWeight:"bold"}}>Leader Dashboard</div>
       <button className="nav-item" onClick={() => {setActiveSidebar("member-att-panel"); setSidebarOpen(false);}}>
         <span className="icon">👥</span> Members Attendance
       </button>
@@ -3311,7 +3383,8 @@ const leaveSummaryUids = Object.keys(usersMap || {})
     {isAdmin &&  (
       <>
         <hr />
-        <div className="sidebar-section-title" style={{color:"#0ea5e9",fontWeight:"bold"}}>Admin Dashboard</div>
+        <div className="sidebar-section-title" style={{color:"#d7d8ff",fontWeight:"bold"}}>Admin Dashboard</div>
+        <div className="sidebar-section-title" style={{color:"#0ea5e9",fontWeight:"bold"}}>Employee Management</div>
        {canAccessPayroll && (
         <button className="nav-item" onClick={() => { setActiveSidebar("admin-employee-form"); setSidebarOpen(false); }}><span className="icon">🧾</span> Employee Information</button>
          )}
@@ -3519,7 +3592,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                       <td>{colorStatus(lv.status)}</td>
                       <td>
                       <button
-                        className="btn small blue"
+                        className="btn small"
                         disabled={lv.status !== "pending"}
                         style={{
                           opacity: lv.status !== "pending" ? 0.4 : 1,
@@ -3765,7 +3838,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
               <td>{at.locationOut ? <a target="_blank" rel="noreferrer" href={`https://maps.google.com/?q=${at.locationOut.latitude},${at}`}>📍 View</a> : "-"}</td>
               <td>
               <button
-                className="btn small blue"
+                className="btn small"
                 onClick={() => {
                   setEditingLeaderAttendance(at);
                   setLeaderEditIn(at.clockInTime || "");
@@ -3848,6 +3921,8 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
               />
+              </div>
+               <div className="flex-date">
                <label>End Date</label>
               <input
                 type="date"
@@ -3966,13 +4041,13 @@ const leaveSummaryUids = Object.keys(usersMap || {})
     <h2>Employee Information</h2>
 
     {/* Search + actions */}
-    <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
+    <div className="emp_info">
       <input
         type="text"
         placeholder="Search by code, name, email, department..."
         value={empSearch}
         onChange={(e) => setEmpSearch(e.target.value)}
-        style={{ flex: 1 }}
+       
       />
       <button className="btn" onClick={() => setEmpSearch("")}>Clear</button>
       <button className="btn blue" onClick={openCreateEmployeeModal}>+ New Employee</button>
@@ -4680,25 +4755,26 @@ const leaveSummaryUids = Object.keys(usersMap || {})
         <section className="card">
         <h2>Attendance Overview (Calendar)</h2>
 
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
-          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <label style={{ fontWeight: 600 }}>Month:</label>
-        <input type="month" value={overviewMonth} onChange={(e) => setOverviewMonth(e.target.value)} />
-
-        <label style={{ fontWeight: 600 }}>Staff:</label>
-        <select value={overviewUserId} onChange={(e) => setOverviewUserId(e.target.value)} style={{ minWidth: 260 }}>
-        <option value="">-- Select staff --</option>
-        {Object.keys(usersMap || {})
-          .sort((a, b) => (usersMap[a]?.eid || "").localeCompare(usersMap[b]?.eid || ""))
-          .map((uid) => (
-            <option key={uid} value={uid}>
-              {(usersMap[uid]?.eid || "-")} - {(usersMap[uid]?.name || usersMap[uid]?.email || uid)}
-            </option>
-          ))}
-        </select>
+        <div className="att_overview">
+          <div className="att_overview_flex w18">
+            <label style={{ fontWeight: 600 }}>Month:</label>
+            <input type="month" value={overviewMonth} onChange={(e) => setOverviewMonth(e.target.value)} />
         </div>
+          <div className="att_overview_flex w60">
+            <label style={{ fontWeight: 600 }}>Staff:</label>
+            <select value={overviewUserId} onChange={(e) => setOverviewUserId(e.target.value)} style={{ width: "93%" }}>
+            <option value="">-- Select staff --</option>
+            {Object.keys(usersMap || {})
+              .sort((a, b) => (usersMap[a]?.eid || "").localeCompare(usersMap[b]?.eid || ""))
+              .map((uid) => (
+                <option key={uid} value={uid}>
+                  {(usersMap[uid]?.eid || "-")} - {(usersMap[uid]?.name || usersMap[uid]?.email || uid)}
+                </option>
+              ))}
+            </select>
+          </div>
 
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <div className="att_overview_flex w20">
             <button className="btn" onClick={() => { setOverviewUserId(""); setOverviewMonth(attendanceMonth || overviewMonth); }}>
               Clear
             </button>
@@ -4720,13 +4796,9 @@ const leaveSummaryUids = Object.keys(usersMap || {})
         <div>Please select a staff.</div>
         ) : (
         <div>
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(7, minmax(120px, 1fr))",
-          gap: 8
-        }}>
+        <div className="calendar-grid calendar-card">
           {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d) => (
-            <div key={d} style={{ fontWeight: 800, opacity: 0.7 }}>{d}</div>
+            <div key={d} className="pc_dayname">{d}</div>
           ))}
 
             {buildCalendarCells(overviewMonth).map((dateStr, idx) => {
@@ -4736,6 +4808,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
               const isWeekend = weekday === 0 || weekday === 6;
               const isHoliday = !!holidayMap[dateStr];
               const isRedDay = isWeekend || isHoliday;
+               const dayName = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][weekday];
 
               const att = findAttendanceByUserAndDate(overviewUserId, dateStr);
               const leaveAbbr = getLeaveAbbreviationForDate(overviewUserId, dateStr) || "";
@@ -4752,9 +4825,11 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                   }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                    <div style={{ fontWeight: 900, color: isRedDay ? "#b91c1c" : "inherit" }}>
-                      {dateStr}
-                    </div>
+
+                     <div style={{ fontWeight: 900, color: isRedDay ? "#b91c1c" : "inherit" }}>
+                          <span className="weekday-mobile">{dayName}</span>
+                          {dateStr}
+                      </div>
 
                     {leaveAbbr ? (
                       <div style={{ fontWeight: 900, color: "#d97706" }}>{leaveAbbr}</div>
@@ -4800,20 +4875,18 @@ const leaveSummaryUids = Object.keys(usersMap || {})
         {isAdmin && activeSidebar==="admin-att" && (
           <section className="card">
             <h2>All Staff Attendance</h2>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
+            <div className="staff_att_container">
+            <div className="staff_att_UI">
             <input
-              style={{ flex: 1,width: 350 }}
               placeholder="Search by employee ID, name, email, date..."
               value={attendanceSearch}
               onChange={(e) => setAttendanceSearch(e.target.value)}
-             
             />
             <input
               type="month"
               value={attendanceMonth}
               onChange={(e) => setAttendanceMonth(e.target.value)}
-              style={{ width: 150 }}
+
             />
             <button className="btn" onClick={() => setAttendanceSearch("")}>Clear</button>
           </div>
@@ -4977,7 +5050,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
 
            {isAdmin && activeSidebar==="admin-att-summary" && (
             <section className="card" style={{ marginTop: 18 }}>
-              <h2>Monthly Attendance Summary ({attendanceMonth})</h2>
+              <h2>Monthly Attendance Summary</h2>
 
               <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
                 <label style={{ fontWeight: 600 }}>Month:</label>
@@ -5062,21 +5135,22 @@ const leaveSummaryUids = Object.keys(usersMap || {})
           <section className="card">
             <h2>All Leave Requests</h2>
 
-            <div className="filters" style={{ display: "flex", gap: 10, alignItems: "self-start", marginBottom: 12 }}>
+            <div className="filters all_leave_req">
               <input
                 type="text"
                 placeholder="Search by name"
                 value={nameFilter}
                 onChange={(e) => setNameFilter(e.target.value)}
-                style={{ flex: 1 }}
               />
-              <div style={{ display: "flex", gap: 10, alignItems: "baseline", marginBottom: 12 }}>
+              <div className="flex-date">
                <label>Start Date</label>
-             <input
-                type="date"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-              />
+                <input
+                    type="date"
+                    value={fromDate}
+                    onChange={(e) => setFromDate(e.target.value)}
+                  />
+              </div>
+              <div className="flex-date">
                <label>End Date</label>
               <input
                 type="date"
@@ -5084,8 +5158,8 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                 onChange={(e) => setToDate(e.target.value)}
               />
               </div>
-               <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-              <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+               <div style={{ display: "flex", gap: 12, alignItems: "center", justifyContent:"center",marginBottom:20  }}>
+              <label style={{ display: "flex", alignItems: "center" }}>
                 <input
                   type="checkbox"
                   checked={showApprovedLeave}
@@ -5094,7 +5168,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                 Approved
               </label>
 
-              <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <label style={{ display: "flex", alignItems: "center" }}>
                 <input
                   type="checkbox"
                   checked={showRejectedLeave}
@@ -5540,17 +5614,21 @@ const leaveSummaryUids = Object.keys(usersMap || {})
           <section className="card">
             <h2>All Overtime Requests</h2>
 
-             <div className="filters" style={{ display: "flex", gap: 10, alignItems: "self-start", marginBottom: 12 }}>
+             <div className="filters all_ot_req">
                 <input
                   type="text"
                   placeholder="Search by name"
                   value={nameFilter}
                   onChange={(e) => setNameFilter(e.target.value)}
-                  style={{ flex: 1 }}
+                 
                 />
-
-                <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                  <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                 <input
+                  type="date"
+                  value={dateFilter}
+                  onChange={(e) => setDateFilter(e.target.value)}
+                />
+                <div style={{ display: "flex", gap: 12, alignItems: "center",justifyContent:"center",marginBottom:20  }}>
+                  <label style={{ display: "flex", alignItems: "center" }}>
                     <input
                       type="checkbox"
                       checked={showApprovedOT}
@@ -5559,7 +5637,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                     Approved
                   </label>
 
-                  <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <label style={{ display: "flex", alignItems: "center" }}>
                     <input
                       type="checkbox"
                       checked={showRejectedOT}
@@ -5569,11 +5647,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                   </label>
                  </div>
 
-                <input
-                  type="date"
-                  value={dateFilter}
-                  onChange={(e) => setDateFilter(e.target.value)}
-                />
+               
                 <button className="btn" onClick={resetFilters}>Reset</button>
               </div>
 
