@@ -1059,16 +1059,6 @@ const sendPayslip = async (p) => {
   /* ---------------- data loaders ---------------- */
   
   // Load all employees
-/*   const loadEmployees = async () => {
-  try {
-    if (!auth.currentUser) return;       // ✅ STOP after logout
-    const snap = await getDocs(collection(db, "users"));
-    setEmployees(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-  } catch (err) {
-    console.error("loadEmployees error:", err);
-  }
-};
- */
   /*load emplyee order in eid */
   const loadEmployees = async () => {
   try {
@@ -1987,10 +1977,17 @@ const getLeaveAbbreviationForDate = (userId, date) => {
 const [editingLeaderAttendance, setEditingLeaderAttendance] = useState(null);
 const [leaderEditIn, setLeaderEditIn] = useState("");
 const [leaderEditOut, setLeaderEditOut] = useState("");
+
 const [nameFilter, setNameFilter] = useState("");
 const [dateFilter, setDateFilter] = useState("");
 const [fromDate, setFromDate] = useState("");
 const [toDate, setToDate] = useState("");
+
+const [attendanceNameFilter, setAttendanceNameFilter] = useState("");
+const [leaveNameFilter, setLeaveNameFilter] = useState("");
+const [leaveFromDate, setLeaveFromDate] = useState("");
+const [leaveToDate, setLeaveToDate] = useState("");
+const [otNameFilter, setOtNameFilter] = useState("");
 
 // Admin filters: show approved/rejected (pending is default)
 const [showApprovedLeave, setShowApprovedLeave] = useState(false);
@@ -2012,17 +2009,23 @@ const resetFilters = () => {
   setShowRejectedOT(false);
 };
 
+const resetAttendanceFilters = () => {
+  setAttendanceNameFilter("");
+  setAttendanceMonthFilter(getCurrentMonth());
+};
+
+const resetLeaveFilters = () => {
+  setLeaveNameFilter("");
+  setLeaveFromDate("");
+  setLeaveToDate("");
+};
+
+const resetOTFilters = () => {
+  setOtNameFilter("");
+  setOtMonthFilter(getCurrentMonth());
+};
+
 const safe = (v) => (v || "").toString().toLowerCase();
-
-/* const filteredMemberAttendance = leaderAttendance.filter(row => {
-  const name = usersMap[row.userId]?.name;   // real source
-  const matchName = safe(name).includes(safe(nameFilter));
-
-  const matchDate =
-    dateFilter === "" || row.date === dateFilter;
-
-  return matchName && matchDate;
-}); */
 
 const getCurrentMonth = () => {
   const now = new Date();
@@ -2032,13 +2035,15 @@ const getCurrentMonth = () => {
 };
 
 const [monthFilter, setMonthFilter] = useState(getCurrentMonth());
+const [attendanceMonthFilter, setAttendanceMonthFilter] = useState(getCurrentMonth());
+const [otMonthFilter, setOtMonthFilter] = useState(getCurrentMonth());
 
 const filteredMemberAttendance = leaderAttendance.filter(row => {
   const name = usersMap[row.userId]?.name;
-  const matchName = safe(name).includes(safe(nameFilter));
+  const matchName = safe(name).includes(safe(attendanceNameFilter));
 
   const matchMonth =
-    monthFilter === "" || row.date.startsWith(monthFilter);
+    attendanceMonthFilter === "" || row.date.startsWith(attendanceMonthFilter);
 
   return matchName && matchMonth;
 });
@@ -2046,15 +2051,15 @@ const filteredMemberAttendance = leaderAttendance.filter(row => {
 const filteredMemberLeaves = leaderLeaves.filter(row => {
   // ---------- Name filter ----------
   const name = usersMap[row.userId]?.name;
-  const matchName = safe(name).includes(safe(nameFilter));
+  const matchName = safe(name).includes(safe(leaveNameFilter));
 
   // ---------- Date range filter ----------
-  if (!fromDate && !toDate) return matchName;
+  if (!leaveFromDate && !leaveToDate) return matchName;
 
   const rowStart = new Date(row.startDate);
   const rowEnd = new Date(row.endDate);
-  const filterFrom = fromDate ? new Date(fromDate) : null;
-  const filterTo = toDate ? new Date(toDate) : null;
+  const filterFrom = leaveFromDate ? new Date(leaveFromDate) : null;
+  const filterTo = leaveToDate ? new Date(leaveToDate) : null;
 
   // overlap logic
   if (filterFrom && rowEnd < filterFrom) return false;
@@ -2066,10 +2071,10 @@ const filteredMemberLeaves = leaderLeaves.filter(row => {
 
 const filteredMemberOT = leaderOvertime.filter(row => {
   const name = usersMap[row.userId]?.name;
-  const matchName = safe(name).includes(safe(nameFilter));
+  const matchName = safe(name).includes(safe(otNameFilter));
 
   const matchMonth =
-    monthFilter === "" || row.date.startsWith(monthFilter);
+    otMonthFilter === "" || row.date.startsWith(otMonthFilter);
 
   return matchName && matchMonth;
 });
@@ -3585,7 +3590,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
             <table className="data-table">
               <thead>
               <tr>
-                <th>Start</th><th>End</th><th>LeaveType</th><th>LeaveName</th><th>Reason</th><th>Status</th><th>Action</th>
+                <th>Apply Date</th><th>LeaveStart</th><th>LeaveEnd</th><th>LeaveType</th><th>LeaveName</th><th>Reason</th><th>Status</th><th>Action</th>
               </tr>
             </thead>
 
@@ -3593,6 +3598,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                 {leaves.length===0 ? <tr><td colSpan="5">No leave requests</td></tr> :
                   leaves.map((lv) => (
                     <tr key={lv.id}>
+                      <td>{lv.createdAt?.split("T")[0]}</td>
                       <td>{lv.startDate}</td>
                       <td>{lv.endDate}</td>
                       <td>{lv.leaveType}</td>
@@ -3820,16 +3826,16 @@ const leaveSummaryUids = Object.keys(usersMap || {})
       <input
         type="text"
         placeholder="Search by name"
-        value={nameFilter}
-        onChange={(e) => setNameFilter(e.target.value)}
+        value={attendanceNameFilter}
+        onChange={(e) => setAttendanceNameFilter(e.target.value)}
       />
 
        <input
         type="month"
-        value={monthFilter}
-        onChange={(e) => setMonthFilter(e.target.value)}
+        value={attendanceMonthFilter}
+        onChange={(e) => setAttendanceMonthFilter(e.target.value)}
       />
-      <button className="btn" onClick={resetFilters}>Reset</button>
+      <button className="btn" onClick={resetAttendanceFilters}>Reset</button>
     </div>
 
 
@@ -3919,45 +3925,47 @@ const leaveSummaryUids = Object.keys(usersMap || {})
               <input
                 type="text"
                 placeholder="Search by name"
-                value={nameFilter}
-                onChange={(e) => setNameFilter(e.target.value)}
+                value={leaveNameFilter}
+                onChange={(e) => setLeaveNameFilter(e.target.value)}
                
               />
               <div className="flex-date">
                <label>Start Date</label>
              <input
                 type="date"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
+                value={leaveFromDate}
+                onChange={(e) => setLeaveFromDate(e.target.value)}
               />
               </div>
                <div className="flex-date">
                <label>End Date</label>
               <input
                 type="date"
-                value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
+                value={leaveToDate}
+                onChange={(e) => setLeaveToDate(e.target.value)}
               />
               </div>
 
-              <button className="btn" onClick={resetFilters}>Reset</button>
+              <button className="btn" onClick={resetLeaveFilters}>Reset</button>
             </div>
     
     <table className="data-table">
       <thead>
         <tr>
-          <th>User</th><th>Start</th><th>End</th><th>Type</th><th>Reason</th><th>Status</th><th>Action</th>
+          <th>User</th><th>ApplyDate</th><th>LeaveStart</th><th>LeaveEnd</th><th>LeaveName</th><th>LeaveType</th><th>Reason</th><th>Status</th><th>Action</th>
         </tr>
       </thead>
       <tbody>
         {filteredMemberLeaves.length === 0 ? (
-          <tr><td colSpan="7">No leave requests</td></tr>
+          <tr><td colSpan="8">No leave requests</td></tr>
         ) : (
           filteredMemberLeaves.map((lv) => (
             <tr key={lv.id}>
               <td>{displayUser(lv.userId)}</td>
+               <td>{lv.createdAt?.split("T")[0]}</td>
               <td>{lv.startDate}</td>
               <td>{lv.endDate}</td>
+              <td>{lv.leaveName}</td>
               <td>{lv.leaveType}</td>
               <td>{lv.reason}</td>
               <td>{colorStatus(lv.status)}</td>
@@ -3991,17 +3999,17 @@ const leaveSummaryUids = Object.keys(usersMap || {})
       <input
         type="text"
         placeholder="Search by name"
-        value={nameFilter}
-        onChange={(e) => setNameFilter(e.target.value)}
+        value={otNameFilter}
+        onChange={(e) => setOtNameFilter(e.target.value)}
        
       />
 
      <input
         type="month"
-        value={monthFilter}
-        onChange={(e) => setMonthFilter(e.target.value)}
+        value={otMonthFilter}
+        onChange={(e) => setOtMonthFilter(e.target.value)}
       />
-      <button className="btn" onClick={resetFilters}>Reset</button>
+      <button className="btn" onClick={resetOTFilters}>Reset</button>
     </div>
 
     <table className="data-table">
@@ -5192,11 +5200,16 @@ const leaveSummaryUids = Object.keys(usersMap || {})
             
             <table className="data-table">
               <thead>
-              <tr>
-                <th>User</th><th>Start</th><th>End</th><th>LeaveType</th><th>LeaveName</th>
+               <tr>
+                <th>User</th>
+                <th>Apply<br></br>Date</th>
+                <th>Leave<br></br>Start</th>
+                <th>Leave<br></br>End</th>
+                <th>Leave<br></br>Type</th>
+                <th>Leave<br></br>Name</th>
                 <th>Reason</th>
                 <th>Leader</th>
-                <th>Admin</th>
+               {/*  <th>Admin</th> */}
                 <th>Status</th>
                 <th>Action</th>
               </tr>
@@ -5207,14 +5220,14 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                     <tr key={lv.id}>
                      {/*  <td>{usersMap[lv.userId] || lv.userId}</td> */}
                      <td>{displayUser(lv.userId)}</td>
-
+                      <td>{lv.createdAt?.split("T")[0]}</td>
                       <td>{lv.startDate}</td>
                       <td>{lv.endDate}</td>
                       <td>{lv.leaveType}</td>
                       <td>{lv.leaveName}</td>
                       <td>{lv.reason}</td>
                        <td>{lv.leaderActionBy ? displayUser(lv.leaderActionBy) : "-"}</td>
-                      <td>{lv.adminActionBy ? displayUser(lv.adminActionBy) : "-"}</td>
+                      {/* <td>{lv.adminActionBy ? displayUser(lv.adminActionBy) : "-"}</td> */}
                       <td>{colorStatus(lv.status)}</td>
                       <td>
                         <div style={{ display: "flex", justifyContent: "start", gap: "2px" }}>
