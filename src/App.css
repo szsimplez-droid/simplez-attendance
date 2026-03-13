@@ -983,13 +983,13 @@ input[type="checkbox"] {
   }
 
   .form input[type="time"], .form input[type="date"] {
-      width: 100%;
+      width: 90%;
       padding: 10px;
       box-sizing: border-box;
   }
 
   .form input, .form select {
-      width: 100%;
+      width: 90%;
       padding: 10px;
       box-sizing: border-box;
   }

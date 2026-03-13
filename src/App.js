@@ -3460,9 +3460,18 @@ const leaveSummaryUids = Object.keys(usersMap || {})
             <section className="card" style={{ marginTop: 20 }}>
               <h2>Permission Out (P/O) Report</h2>
               <div className="form" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                <input type="date" value={poDate} onChange={(e) => setPoDate(e.target.value)} />
+                <div class="form-group">
+                  <label>Date</label>
+                  <input type="date" value={poDate} onChange={(e) => setPoDate(e.target.value)} />
+                </div>
+                <div class="form-group">
+                   <label>Start Time</label>
                 <input type="time" value={poFrom} onChange={(e) => setPoFrom(e.target.value)} />
-                <input type="time" value={poTo} onChange={(e) => setPoTo(e.target.value)} />
+                </div>
+                <div class="form-group">
+                   <label>End Time</label>
+                  <input type="time" value={poTo} onChange={(e) => setPoTo(e.target.value)} />
+                </div>
                 <button className="btn submit" onClick={addPoReport}>Add P/O</button>
               </div>
 
