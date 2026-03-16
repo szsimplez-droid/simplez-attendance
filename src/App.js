@@ -1195,14 +1195,110 @@ const sendPayslip = async (p) => {
   
   
   // Attendance Overview controls
+  const [overviewLeaveUserId, setOverviewLeaveUserId] = useState("");
+  const [overviewLeaveStart, setOverviewLeaveStart] = useState("");
+  const [overviewLeaveEnd, setOverviewLeaveEnd] = useState("");
+  const [overviewLeaveType, setOverviewLeaveType] = useState("Full Day");
+  const [overviewLeaveName, setOverviewLeaveName] = useState("Casual Leave");
+  const [overviewLeaveReason, setOverviewLeaveReason] = useState("");
+
   const [overviewMonth, setOverviewMonth] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   });
   const [overviewUserId, setOverviewUserId] = useState("");
   
+  const adminCreateLeaveForStaff = async () => {
+    try {
+      if (
+        !overviewLeaveUserId ||
+        !overviewLeaveStart ||
+        !overviewLeaveEnd ||
+        !overviewLeaveReason
+      ) {
+        return notify("Please select staff, start date, end date and reason.");
+      }
   
-    const loadCompanyHolidaysForMonth = async (yyyyMm) => {
+      const now = new Date().toISOString();
+  
+      const newLeave = {
+        userId: overviewLeaveUserId,
+        startDate: overviewLeaveStart,
+        endDate: overviewLeaveEnd,
+        leaveType: overviewLeaveType,
+        leaveName: overviewLeaveName,
+        reason: overviewLeaveReason,
+      };
+  
+      const units = calcLeaveUnits(newLeave);
+      const year = new Date(overviewLeaveStart).getFullYear();
+  
+      await addDoc(collection(db, "leaves"), {
+        ...newLeave,
+  
+        status: "approved",
+        leaderStatus: "skipped_by_admin",
+        adminStatus: "approved",
+  
+        leaderActionBy: user.uid,
+        leaderActionAt: now,
+        adminActionBy: user.uid,
+        adminActionAt: now,
+  
+        // important for refund when deleting
+        balanceDeducted: true,
+        balanceDeductedAt: now,
+        balanceDeductedUnits: units,
+        balanceRefunded: false,
+        balanceRefundedAt: null,
+        balanceRefundedUnits: null,
+  
+        createdAt: now,
+        createdByAdmin: true,
+        createdBy: user.uid,
+      });
+  
+      const balRef = doc(db, "leaveBalances", `${overviewLeaveUserId}_${year}`);
+      const balSnap = await getDoc(balRef);
+  
+      const balData = balSnap.exists()
+        ? balSnap.data()
+        : { userId: overviewLeaveUserId, year, balances: {} };
+  
+      const balances = { ...(balData.balances || {}) };
+      const typeObj = { ...(balances[overviewLeaveName] || {}) };
+  
+      typeObj.taken = Number(typeObj.taken || 0) + Number(units);
+      balances[overviewLeaveName] = typeObj;
+  
+      await setDoc(
+        balRef,
+        {
+          userId: overviewLeaveUserId,
+          year,
+          balances,
+          updatedAt: now,
+        },
+        { merge: true }
+      );
+  
+      notify("✅ Leave added by admin");
+      setOverviewLeaveUserId("");
+      setOverviewLeaveStart("");
+      setOverviewLeaveEnd("");
+      setOverviewLeaveType("Full Day");
+      setOverviewLeaveName("Casual Leave");
+      setOverviewLeaveReason("");
+  
+      loadAllLeaves();
+      loadLeaveBalances(year);
+    } catch (err) {
+      console.error(err);
+      notify("❌ Cannot create leave: " + err.message);
+    }
+  };
+  
+  const loadCompanyHolidaysForMonth = async (yyyyMm) => {
       try {
         const { start, end } = monthRange(yyyyMm);
         const q = query(
@@ -2523,13 +2619,13 @@ const leaderUpdateLeaveStatus = async (leaveDocId, decision, memberUserId) => {
 const getLeaveYear = (leave) => new Date(leave.startDate).getFullYear();
 
 const adminUpdateLeaveStatus = async (leaveId, decision, leaveRow) => {
-  const leaderOk =
+  /* const leaderOk =
     leaveRow?.leaderStatus === "approved" ||
     leaveRow?.status === "leader_approved" ||
     leaveRow?.status === "approved" ||
     leaveRow?.status === "rejected";
 
-  if (!leaderOk) return notify("⛔ Leader must approve first.");
+  if (!leaderOk) return notify("⛔ Leader must approve first."); */
 
   // for UI refresh (avoid only using currentYear)
   const yearForReload = leaveRow?.startDate
@@ -2554,7 +2650,29 @@ const adminUpdateLeaveStatus = async (leaveId, decision, leaveRow) => {
         adminActionBy: user.uid,
         adminActionAt: new Date().toISOString(),
         status: nextStatus,
-      };
+
+      // admin can finalize even if leader did nothing
+          leaderStatus:
+            leave.leaderStatus && leave.leaderStatus !== "pending"
+              ? leave.leaderStatus
+              : decision === "approved"
+              ? "skipped_by_admin"
+              : leave.leaderStatus || "pending",
+
+          leaderActionBy:
+            leave.leaderStatus && leave.leaderStatus !== "pending"
+              ? leave.leaderActionBy || null
+              : decision === "approved"
+              ? user.uid
+              : leave.leaderActionBy || null,
+
+          leaderActionAt:
+            leave.leaderStatus && leave.leaderStatus !== "pending"
+              ? leave.leaderActionAt || null
+              : decision === "approved"
+              ? new Date().toISOString()
+              : leave.leaderActionAt || null,
+        };
 
       const units = Number(leave.balanceDeductedUnits ?? calcLeaveUnits(leave));
       const leaveName = leave.leaveName;
@@ -3449,9 +3567,10 @@ const leaveSummaryUids = Object.keys(usersMap || {})
 
         <div style={{marginTop:20}}>
         <button className="btn out" onClick={handleLogout}>Logout</button>
+        </div>
         <p>Copyright 2026 Simple'Z All right reserved.</p>
         </div>
-      </div>
+     
 
 
       {/* main content */}
@@ -4796,6 +4915,89 @@ const leaveSummaryUids = Object.keys(usersMap || {})
         {isAdmin && activeSidebar === "admin-att-overview" && (
         <section className="card">
         <h2>Attendance Overview (Calendar)</h2>
+
+        <div className="card" style={{ marginBottom: 16 }}>
+        <h3>Add Leave for Staff</h3>
+
+        <div className="form" style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <div className="form-group">
+        <label>Staff</label>
+        <select
+        value={overviewLeaveUserId}
+        onChange={(e) => setOverviewLeaveUserId(e.target.value)}
+        >
+        <option value="">Select staff</option>
+        {Object.values(usersMap)
+        .sort((a, b) => (a.eid || "").localeCompare(b.eid || ""))
+        .map((u) => (
+          <option key={u.id} value={u.id}>
+            {(u.eid || "-")} - {u.name || u.email}
+          </option>
+        ))}
+        </select>
+        </div>
+
+        <div className="form-group">
+        <label>Start Date</label>
+        <input
+        type="date"
+        value={overviewLeaveStart}
+        onChange={(e) => setOverviewLeaveStart(e.target.value)}
+        />
+        </div>
+
+        <div className="form-group">
+        <label>End Date</label>
+        <input
+        type="date"
+        value={overviewLeaveEnd}
+        onChange={(e) => setOverviewLeaveEnd(e.target.value)}
+        />
+        </div>
+
+        <div className="form-group">
+        <label>Leave Type</label>
+        <select
+        value={overviewLeaveType}
+        onChange={(e) => setOverviewLeaveType(e.target.value)}
+        >
+        <option>Full Day</option>
+        <option>Morning Half</option>
+        <option>Evening Half</option>
+        </select>
+        </div>
+
+        <div className="form-group">
+        <label>Leave Name</label>
+        <select
+        value={overviewLeaveName}
+        onChange={(e) => setOverviewLeaveName(e.target.value)}
+        >
+        <option>Casual Leave</option>
+        <option>Annual Leave</option>
+        <option>Medical Leave</option>
+        <option>WithoutPay Leave</option>
+        <option>Maternity Leave</option>
+        </select>
+        </div>
+
+        <div className="form-group" style={{ minWidth: 220 }}>
+        <label>Reason</label>
+        <input
+        type="text"
+        value={overviewLeaveReason}
+        onChange={(e) => setOverviewLeaveReason(e.target.value)}
+        placeholder="Reason"
+        />
+        </div>
+
+        <div className="form-group" style={{ alignSelf: "flex-end" }}>
+        <button className="btn submit" onClick={adminCreateLeaveForStaff}>
+        Add Leave
+        </button>
+        </div>
+        </div>
+         </div>
 
         <div className="att_overview">
           <div className="att_overview_flex w18">
