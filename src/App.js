@@ -1133,7 +1133,11 @@ const sendPayslip = async (p) => {
       // ✅ KEY FIX: prefer authUid if stored
       const key = d.authUid || docSnap.id;
 
-      map[key] = { id: key, ...d };
+      map[key] = { id: key, ...d,
+        jobAllowance: Number(d.JobTitleAllowance || 0),
+        directorAllowance: Number(d.DirectorAllowance || 0),
+        languageAllowance: Number(d.LanguageAllowance || 0),
+      };
     });
     setUsersMap(map);
   };

@@ -573,9 +573,9 @@ const sortedUsers = Object.entries(usersMap)
     permanentEmp: 0,
     pitchAdjust: 0,
     pitchTransfer: 0,
-    jobAllowance: 0,
-    directorAllowance: 0,
-    languageAllowance: 0,
+    jobAllowance: user.jobAllowance || 0,
+    directorAllowance: user.directorAllowance || 0,
+    languageAllowance: user.languageAllowance || 0,
     ssb: 0,
     incomeTax: 0,
     bonus: 0,
@@ -649,7 +649,10 @@ const handlePickUser = async (uid) => {
               staffId: user.eid || "",
               staffteam: user.team || "",
               staffposition: user.position || "",
-              languageLevel: user.languageLevel || ""
+              languageLevel: user.languageLevel || "",
+              jobAllowance: Number(user.JobTitleAllowance || 0),
+              directorAllowance: Number(user.DirectorAllowance || 0),
+              languageAllowance: Number(user.LanguageAllowance || 0),
             }));
 
             /* loadPayrollAutoData(uid); */
