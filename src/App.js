@@ -4181,6 +4181,21 @@ const leaveSummaryUids = Object.keys(usersMap || {})
           value={employeeForm.pitch}
           onChange={(e) => setEmployeeForm({ ...employeeForm, pitch: e.target.value })}
         />
+        <input
+          placeholder="Job Title Allowance"
+          value={employeeForm.JobTitleAllowance}
+          onChange={(e) => setEmployeeForm({ ...employeeForm, JobTitleAllowance: e.target.value })}
+        />
+        <input
+          placeholder="Director Allowance"
+          value={employeeForm.DirectorAllowance}
+          onChange={(e) => setEmployeeForm({ ...employeeForm, DirectorAllowance: e.target.value })}
+        />
+         <input
+          placeholder="LanguageAllowance"
+          value={employeeForm.LanguageAllowance}
+          onChange={(e) => setEmployeeForm({ ...employeeForm, LanguageAllowance: e.target.value })}
+        />
 
         {/* For edit mode, show Firestore email (profile) */}
         <input
