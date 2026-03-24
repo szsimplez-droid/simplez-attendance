@@ -25,10 +25,14 @@ import {
   deleteDoc,
   setDoc,
 } from "firebase/firestore";
+
 import {
   signInWithEmailAndPassword,
   signOut,
-  sendPasswordResetEmail
+  sendPasswordResetEmail,
+  onAuthStateChanged,
+  setPersistence,
+  browserLocalPersistence,
 } from "firebase/auth";
 
 import "./App.css";
@@ -81,7 +85,9 @@ const secondaryAuth = getAuth(secondaryApp);
 
 /* ---------------- App ---------------- */
 export default function App() {
-  // Auth + role
+   // Auth + role
+  const [authLoading, setAuthLoading] = useState(true);
+
   const [user, setUser] = useState(null);
   const [role, setRole] = useState("");
   const [roles, setRoles] = useState([]);
@@ -133,6 +139,7 @@ export default function App() {
   const [poDate, setPoDate] = useState("");
   const [poFrom, setPoFrom] = useState("");
   const [poTo, setPoTo] = useState("");
+  const [poReason, setpoReason] = useState("");
   const [poList, setPoList] = useState([]);
   const [allPoList, setAllPoList] = useState([]);
 
@@ -153,9 +160,156 @@ export default function App() {
   const [empSearch, setEmpSearch] = useState("");
   const [selectedEmpId, setSelectedEmpId] = useState(null);
 
-  const leaders = employees.filter(
-  (e) => (e.role === "leader") || (e.roles || []).includes("leader")
-);
+  const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(false);
+  
+  const [notifications, setNotifications] = useState([]);
+  const [showNoti, setShowNoti] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+ const leaders = employees.filter(
+   (e) => (e.role === "leader") || (e.roles || []).includes("leader"));
+ 
+   // open in new tab start
+   const handleTabClick = (e, tab) => {
+     if (
+       e.ctrlKey ||
+       e.metaKey ||
+       e.shiftKey ||
+       e.altKey ||
+       e.button !== 0
+     ) {
+       return;
+     }
+ 
+     e.preventDefault();
+     setActiveSidebar(tab);
+     setSidebarOpen(false);
+     window.history.pushState({}, "", `?tab=${tab}`);
+   };
+ 
+     //left menu Add open/close state
+     
+ 
+ const [openMenuGroup, setOpenMenuGroup] = useState("myMenu");
+ 
+  const handleGroupClick = (key) => {
+   if (desktopSidebarCollapsed) {
+     setDesktopSidebarCollapsed(false);
+     setOpenMenuGroup(key);
+     return;
+   }
+ 
+   setOpenMenuGroup(key);
+ };
+ 
+   useEffect(() => {
+   const syncTabFromUrl = () => {
+     const params = new URLSearchParams(window.location.search);
+     const tab = params.get("tab");
+     if (tab) setActiveSidebar(tab);
+   };
+ 
+   syncTabFromUrl();
+   window.addEventListener("popstate", syncTabFromUrl);
+ 
+   return () => window.removeEventListener("popstate", syncTabFromUrl);
+ }, []);
+ // open in new tab end
+ 
+ //still login start
+ useEffect(() => {
+   const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+     try {
+       if (!firebaseUser) {
+         setUser(null);
+         setRole("");
+         setRoles([]);
+         setName("");
+         setMessage("");
+         setAuthLoading(false);
+         return;
+       }
+ 
+       setUser(firebaseUser);
+ 
+       const uid = firebaseUser.uid;
+       const ud = await getDoc(doc(db, "users", uid));
+ 
+       if (!ud.exists()) {
+         notify("User record not found in Firestore (users collection)");
+         setAuthLoading(false);
+         return;
+       }
+ 
+       const data = ud.data();
+ 
+       setRole(data.role || "");
+       const rolesArr = data.roles || (data.role ? [data.role] : []);
+       setRoles(rolesArr);
+       setName(data.name || "");
+ 
+       setMessage(
+         <>
+           Welcome {data.name || firebaseUser.email}
+           {/* <br />
+           You are now logged in as {data.role} */}
+         </>
+       );
+ 
+       if (data.location) setUserSavedLocation(data.location);
+     } catch (err) {
+       console.error("Auth restore error:", err);
+     } finally {
+       setAuthLoading(false);
+     }
+   });
+ 
+   return () => unsub();
+ }, []);
+ 
+ //still login end
+ 
+ 
+ // notifications start
+ useEffect(() => {
+   if (!user) return;
+ 
+   const q = query(
+     collection(db, "notifications"),
+     where("userId", "==", user.uid)
+    
+   );
+ 
+   const unsub = onSnapshot(
+     q,
+     (snap) => {
+       const list = snap.docs.map((d) => ({
+         id: d.id,
+         ...d.data(),
+       }));
+ 
+       setNotifications(list);
+       setUnreadCount(list.filter((n) => !n.read).length);
+     },
+     (err) => {
+       console.error("Notification listener error:", err);
+     }
+   );
+ 
+   return () => unsub();
+ }, [user]);
+ 
+ const markAllRead = async () => {
+   const unread = notifications.filter((n) => !n.read);
+ 
+   for (let n of unread) {
+     await updateDoc(doc(db, "notifications", n.id), {
+       read: true,
+     });
+   }
+ };
+ 
+ // notifications end
 
 
   const emptyEmployeeForm = {
@@ -725,72 +879,188 @@ const loadLeaderAttendance = async (memberIds) => {
 
   /* ---------------- login / logout ---------------- */
   const handleLogin = async (e) => {
-    e.preventDefault();
-    try {
-      const cred = await signInWithEmailAndPassword(auth, email, password);
-      const uid = cred.user.uid;
-      setUser(cred.user);
-      // load user doc
-      const ud = await getDoc(doc(db, "users", uid));
-      if (!ud.exists()) {
-        notify("User record not found in Firestore (users collection)");
-        return;
-      }
-      const data = ud.data();
-      /* setRole(data.role); */
-      setRole(data.role || ""); // keep old
-     
-      setRole(data.role || "");
-      const rolesArr = data.roles || (data.role ? [data.role] : []);
-      setRoles(rolesArr);
+  e.preventDefault();
+  try {
+    await setPersistence(auth, browserLocalPersistence);
 
-      const has = (r) => rolesArr.includes(r) || data.role === r;
+    const cred = await signInWithEmailAndPassword(auth, email, password);
+    const uid = cred.user.uid;
+    setUser(cred.user);
 
-      setName(data.name || "");
-      setMessage(
+    // load user doc
+    const ud = await getDoc(doc(db, "users", uid));
+    if (!ud.exists()) {
+      notify("User record not found in Firestore (users collection)");
+      return;
+    }
+
+    const data = ud.data();
+
+    setRole(data.role || "");
+    const rolesArr = data.roles || (data.role ? [data.role] : []);
+    setRoles(rolesArr);
+
+    const has = (r) => rolesArr.includes(r) || data.role === r;
+
+    setName(data.name || "");
+    setMessage(
       <>
         Welcome {data.name || cred.user.email}
         <br />
         You are now logged in as {data.role}
       </>
     );
-      // load personal lists
-      await loadAttendance(uid);
-      await loadLeaves(uid);
-      await loadOvertime(uid);
-      loadPoReports(uid);
-      await loadMyPayslips(uid); 
 
-     /*  if (data.role === "admin") loadAllPoReports(); */
-      // load saved location (if any)
-      if (data.location) setUserSavedLocation(data.location);
-      // leader login
-     if (has("leader")) {
-        await loadAllUsers();
-        const ids = await loadLeaderMembers(uid);
-        await loadLeaderLeaves(ids);
-        await loadLeaderOvertime(ids);
-        await loadLeaderAttendance(ids);
-      }
-      // if admin, load management lists
-     
-      if (has("admin")) {
-        await loadAllUsers();
-        await loadAllAttendance();
-        await loadAllLeaves();
-        await loadAllOvertime();
-             
-        await loadAllPayroll();
-        await loadAllPayslips();
-        await loadAllPoReports();
+    // load saved location
+    if (data.location) setUserSavedLocation(data.location);
 
-      }
-
-      
-    } catch (err) {
-      notify("Login failed: " + err.message);
+    // leader login
+    if (has("leader")) {
+      await loadAllUsers();
     }
-  };
+
+    // admin login
+    if (has("admin")) {
+      await loadAllUsers();
+    }
+
+  } catch (err) {
+    notify("Login failed: " + err.message);
+  }
+};
+
+useEffect(() => {
+  if (!user || activeSidebar !== "my-att") return;
+  loadAttendance(user.uid);
+}, [user, activeSidebar]);
+
+useEffect(() => {
+  if (!user || activeSidebar !== "my-leave") return;
+
+  loadLeaves(user.uid);
+  loadOvertime(user.uid);
+}, [user, activeSidebar]);
+
+useEffect(() => {
+  if (!user || activeSidebar !== "my-panel") return;
+
+  loadAttendance(user.uid);
+  loadLeaves(user.uid);
+  loadPoReports(user.uid);
+}, [user, activeSidebar]);
+
+useEffect(() => {
+  if (!user || !isAdmin || activeSidebar !== "admin-att") return;
+
+  (async () => {
+    await loadAllUsers();
+    await loadAllAttendance();
+  })();
+}, [user, isAdmin, activeSidebar]);
+
+useEffect(() => {
+  if (!user || !isAdmin || activeSidebar !== "admin-att-overview") return;
+
+  (async () => {
+    await loadAllUsers();
+    await loadAllAttendance();
+    await loadAllLeaves();
+  })();
+}, [user, isAdmin, activeSidebar]);
+
+useEffect(() => {
+  if (!user || !isAdmin || activeSidebar !== "admin-leave") return;
+
+  (async () => {
+    await loadAllUsers();
+    await loadAllLeaves();
+  })();
+}, [user, isAdmin, activeSidebar]);
+
+useEffect(() => {
+  if (!user || !isAdmin || activeSidebar !== "admin-ot") return;
+
+  (async () => {
+    await loadAllUsers();
+    await loadAllOvertime();
+  })();
+}, [user, isAdmin, activeSidebar]);
+
+useEffect(() => {
+  if (!user || !isAdmin || activeSidebar !== "admin-po") return;
+
+  (async () => {
+    await loadAllUsers();
+    await loadAllPoReports();
+  })();
+}, [user, isAdmin, activeSidebar]);
+
+useEffect(() => {
+  if (!user || !isAdmin || activeSidebar !== "admin-att-summary") return;
+
+  (async () => {
+    await loadAllUsers();
+    await loadAllAttendance();
+  })();
+}, [user, isAdmin, activeSidebar]);
+
+useEffect(() => {
+  if (!user || !isAdmin || activeSidebar !== "admin-leave-balance") return;
+
+  (async () => {
+    await loadAllUsers();
+    await loadLeaveBalances();
+  })();
+}, [user, isAdmin, activeSidebar]);
+
+useEffect(() => {
+  if (!user || !isAdmin || activeSidebar !== "admin-leave-summary") return;
+
+  (async () => {
+    await loadAllUsers();
+    await loadLeaveBalances();
+    await loadAllLeaves();
+  })();
+}, [user, isAdmin, activeSidebar]);
+
+useEffect(() => {
+  if (!user || !isLeader || activeSidebar !== "member-att-panel") return;
+
+  (async () => {
+    await loadAllUsers();
+    const ids = await loadLeaderMembers(user.uid);
+    await loadLeaderAttendance(ids);
+  })();
+}, [user, isLeader, activeSidebar]);
+
+useEffect(() => {
+  if (!user || !isLeader || activeSidebar !== "member-leave-panel") return;
+
+  (async () => {
+    await loadAllUsers();
+    const ids = await loadLeaderMembers(user.uid);
+    await loadLeaderLeaves(ids);
+  })();
+}, [user, isLeader, activeSidebar]);
+
+useEffect(() => {
+  if (!user || !isLeader || activeSidebar !== "member-ot-panel") return;
+
+  (async () => {
+    await loadAllUsers();
+    const ids = await loadLeaderMembers(user.uid);
+    await loadLeaderOvertime(ids);
+  })();
+}, [user, isLeader, activeSidebar]);
+
+useEffect(() => {
+  if (!user || !isAdmin || activeSidebar !== "admin-payroll") return;
+
+  (async () => {
+    await loadAllUsers();
+    await loadEmployees(); // optional, but good if PayrollCalculator uses employees too
+  })();
+}, [user, isAdmin, activeSidebar]);
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -1058,7 +1328,31 @@ const sendPayslip = async (p) => {
   createdAt: new Date().toISOString()
 });
 
+await addDoc(collection(db, "notifications"), {
+    userId: p.userId,
+    type: "payslip",
+    title: "Payslip Available",
+    message: `Payslip for ${p.month} is ready`,
+    date: serverTimestamp(),
+    read: false,
+  });
+
   notify(`Payslip sent to ${p.name}`);
+};
+
+const deletePayrollSummary = async (id) => {
+  try {
+    if (!id) return notify("Payroll record ID missing");
+    if (!window.confirm("Delete this payroll summary record?")) return;
+
+    await deleteDoc(doc(db, "payrollSummary", id));
+    notify("🗑 Payroll summary deleted");
+
+    loadAllPayroll();
+  } catch (err) {
+    console.error(err);
+    notify("❌ Delete failed: " + err.message);
+  }
 };
 
 
@@ -1426,19 +1720,20 @@ const sendPayslip = async (p) => {
 
 // Add new P/O record
 const addPoReport = async () => {
-  if (!poDate || !poFrom || !poTo) return notify("Please fill all P/O fields.");
+  if (!poDate || !poFrom || !poTo || !poReason) return notify("Please fill all P/O fields.");
   const totalTimeByHour = calcPoDuration(poFrom, poTo);
   if (totalTimeByHour === "Invalid") return notify("Invalid time range.");
   await addDoc(collection(db, "poReports"), {
-    userId: user.uid,
-    date: poDate,
-    fromTime: poFrom,
-    toTime: poTo,
-    totalTimeByHour,
-    createdAt: new Date().toISOString(),
-  });
+      userId: user.uid,
+      date: poDate,
+      fromTime: poFrom,
+      toTime: poTo,
+      POreason:poReason,
+      totalTimeByHour,
+      createdAt: new Date().toISOString(),
+    });
   notify("✅ P/O report added.");
-  setPoDate(""); setPoFrom(""); setPoTo("");
+  setPoDate(""); setPoFrom(""); setPoTo("");setpoReason("");
   loadPoReports(user.uid);
 };
 
@@ -2316,13 +2611,7 @@ const leaderUpdateAttendanceTime = async () => {
     setLeaveBalances(map);
   };
 
-    useEffect(() => {
-    if (isAdmin && activeSidebar === "admin-leave-balance") {
-      loadLeaveBalances();
-    }
-  }, [activeSidebar]);
-
-  
+    
   const summaryLeaveTypes = ["Casual Leave", "Annual Leave", "Medical Leave","WithoutPay Leave", "Maternity Leave",];
   const saveLeaveBalance = async (uid) => {
     const data = leaveBalances[uid];
@@ -2373,6 +2662,134 @@ const leaderUpdateAttendanceTime = async () => {
 }, [user?.uid, currentYear]);
 
 
+// ---------------- My panel dashboard ----------------
+
+const todayStr = getTodayDateYangon();
+const currentMonthStr = todayStr.slice(0, 7);
+
+const todayAttendance =
+  attendance.find((a) => a.date === todayStr) || null;
+
+const todayClockIn = todayAttendance?.clockInTime || "--:--";
+const todayClockOut = todayAttendance?.clockOutTime || "--:--";
+
+const attendanceStatus = todayAttendance
+  ? todayAttendance.clockOutTime
+    ? "Checked Out"
+    : "Checked In"
+  : "Not Checked In";
+
+const toMinutes = (timeStr) => {
+  if (!timeStr || timeStr === "-") return null;
+  const [h, m] = timeStr.split(":").map(Number);
+  return h * 60 + m;
+};
+
+const isMorningHalfLeaveOnDate = (dateStr) => {
+  return leaves.some((l) => {
+    if (String(l.status || "").toLowerCase() !== "approved") return false;
+    if (l.startDate !== dateStr || l.endDate !== dateStr) return false;
+
+    const t = String(l.leaveType || "").trim().toLowerCase();
+    return t === "morning half";
+  });
+};
+
+const isEveningHalfLeaveOnDate = (dateStr) => {
+  return leaves.some((l) => {
+    if (String(l.status || "").toLowerCase() !== "approved") return false;
+    if (l.startDate !== dateStr || l.endDate !== dateStr) return false;
+
+    const t = String(l.leaveType || "").trim().toLowerCase();
+    return t === "evening half";
+  });
+};
+
+const monthAttendanceRows = attendance.filter(
+  (a) => (a.date || "").startsWith(currentMonthStr)
+);
+
+const monthPresentDays = monthAttendanceRows.length;
+
+const LATE_LIMIT = 8 * 60;       // 08:00
+const EARLY_OUT_LIMIT = 17 * 60; // 17:00
+
+const monthLateCount = monthAttendanceRows.filter((a) => {
+  if (isMorningHalfLeaveOnDate(a.date)) return false;
+
+  const clockIn = toMinutes(a.clockInTime);
+  if (clockIn == null) return false;
+
+  return clockIn > LATE_LIMIT;
+}).length;
+
+const monthEarlyOutCount = monthAttendanceRows.filter((a) => {
+  if (isEveningHalfLeaveOnDate(a.date)) return false;
+
+  const clockOut = toMinutes(a.clockOutTime);
+  if (clockOut == null) return false;
+
+  return clockOut < EARLY_OUT_LIMIT;
+}).length;
+
+const approvedLeavesThisMonth = leaves.filter((l) => {
+  if (String(l.status || "").toLowerCase() !== "approved") return false;
+
+  const start = l.startDate || "";
+  const end = l.endDate || "";
+
+  return (
+    start.startsWith(currentMonthStr) ||
+    end.startsWith(currentMonthStr) ||
+    (start < `${currentMonthStr}-31` && end >= `${currentMonthStr}-01`)
+  );
+});
+
+const monthLeaveDays = approvedLeavesThisMonth.reduce((sum, l) => {
+  const start = new Date(l.startDate);
+  const end = new Date(l.endDate);
+  const days = Math.max(
+    0,
+    (end - start) / (1000 * 60 * 60 * 24) + 1
+  );
+
+  const isHalf = String(l.leaveType || "").toLowerCase().includes("half");
+  return sum + (isHalf ? 0.5 : days);
+}, 0);
+
+const leaveSummaryRows = [
+  { key: "Casual Leave", hasCarry: false },
+  { key: "Annual Leave", hasCarry: true },
+  { key: "Medical Leave", hasCarry: false },
+  { key: "WithoutPay Leave", hasCarry: false },
+  { key: "Maternity Leave", hasCarry: false },
+].map((item) => {
+  const type = item.key;
+
+  const base = Number(leaveBalances?.[user?.uid]?.balances?.[type]?.base ?? 0);
+  const carry = item.hasCarry
+    ? Number(leaveBalances?.[user?.uid]?.balances?.[type]?.carry ?? 0)
+    : 0;
+
+  const taken = Number(leaveBalances?.[user?.uid]?.balances?.[type]?.taken ?? 0);
+
+  const balance = Math.max(0, base + carry - taken);
+
+  return {
+    leaveName: type,
+    taken,
+    balance,
+  };
+});
+
+const getGreeting = () => {
+  const hour = new Date().getHours();
+
+  if (hour < 12) return "Good Morning";
+  if (hour < 17) return "Good Afternoon";
+  if (hour < 21) return "Good Evening";
+  return "Good Night";
+};
 
  
    // ---------------- Admin: Save Two Locations ----------------
@@ -2496,17 +2913,7 @@ const leaderUpdateAttendanceTime = async () => {
   /* ---------------- leave & overtime (staff) ---------------- */
   const applyLeave = async () => {
     if (!leaveStart || !leaveEnd || !leaveReason) return notify("Please fill leave start, end and reason.");
-    /* await addDoc(collection(db, "leaves"), {
-      userId: user.uid,
-      startDate: leaveStart,
-      endDate: leaveEnd,
-      leaveType,
-      leaveName,
-      reason: leaveReason,
-      status: "pending",
-      createdAt: new Date().toISOString(),
-    }); */
-    await addDoc(collection(db, "leaves"), {
+       await addDoc(collection(db, "leaves"), {
           userId: user.uid,
           startDate: leaveStart,
           endDate: leaveEnd,
@@ -2619,18 +3026,13 @@ const leaderUpdateLeaveStatus = async (leaveDocId, decision, memberUserId) => {
 const getLeaveYear = (leave) => new Date(leave.startDate).getFullYear();
 
 const adminUpdateLeaveStatus = async (leaveId, decision, leaveRow) => {
-  /* const leaderOk =
-    leaveRow?.leaderStatus === "approved" ||
-    leaveRow?.status === "leader_approved" ||
-    leaveRow?.status === "approved" ||
-    leaveRow?.status === "rejected";
-
-  if (!leaderOk) return notify("⛔ Leader must approve first."); */
-
-  // for UI refresh (avoid only using currentYear)
   const yearForReload = leaveRow?.startDate
     ? new Date(leaveRow.startDate).getFullYear()
     : currentYear;
+
+  let shouldCreateNotification = false;
+  let notificationUserId = null;
+  let notificationMessage = "";
 
   try {
     await runTransaction(db, async (tx) => {
@@ -2651,28 +3053,27 @@ const adminUpdateLeaveStatus = async (leaveId, decision, leaveRow) => {
         adminActionAt: new Date().toISOString(),
         status: nextStatus,
 
-      // admin can finalize even if leader did nothing
-          leaderStatus:
-            leave.leaderStatus && leave.leaderStatus !== "pending"
-              ? leave.leaderStatus
-              : decision === "approved"
-              ? "skipped_by_admin"
-              : leave.leaderStatus || "pending",
+        leaderStatus:
+          leave.leaderStatus && leave.leaderStatus !== "pending"
+            ? leave.leaderStatus
+            : decision === "approved"
+            ? "skipped_by_admin"
+            : leave.leaderStatus || "pending",
 
-          leaderActionBy:
-            leave.leaderStatus && leave.leaderStatus !== "pending"
-              ? leave.leaderActionBy || null
-              : decision === "approved"
-              ? user.uid
-              : leave.leaderActionBy || null,
+        leaderActionBy:
+          leave.leaderStatus && leave.leaderStatus !== "pending"
+            ? leave.leaderActionBy || null
+            : decision === "approved"
+            ? user.uid
+            : leave.leaderActionBy || null,
 
-          leaderActionAt:
-            leave.leaderStatus && leave.leaderStatus !== "pending"
-              ? leave.leaderActionAt || null
-              : decision === "approved"
-              ? new Date().toISOString()
-              : leave.leaderActionAt || null,
-        };
+        leaderActionAt:
+          leave.leaderStatus && leave.leaderStatus !== "pending"
+            ? leave.leaderActionAt || null
+            : decision === "approved"
+            ? new Date().toISOString()
+            : leave.leaderActionAt || null,
+      };
 
       const units = Number(leave.balanceDeductedUnits ?? calcLeaveUnits(leave));
       const leaveName = leave.leaveName;
@@ -2685,7 +3086,6 @@ const adminUpdateLeaveStatus = async (leaveId, decision, leaveRow) => {
       const typeObj = { ...(balances[leaveName] || {}) };
       const prevTaken = Number(typeObj.taken || 0);
 
-      // ✅ robust boolean
       const wasDeducted = Boolean(leave.balanceDeducted);
 
       const shouldRefund =
@@ -2697,7 +3097,12 @@ const adminUpdateLeaveStatus = async (leaveId, decision, leaveRow) => {
 
         tx.set(
           balRef,
-          { userId: leave.userId, year, balances, updatedAt: new Date().toISOString() },
+          {
+            userId: leave.userId,
+            year,
+            balances,
+            updatedAt: new Date().toISOString(),
+          },
           { merge: true }
         );
 
@@ -2708,12 +3113,17 @@ const adminUpdateLeaveStatus = async (leaveId, decision, leaveRow) => {
           balanceRefundedAt: new Date().toISOString(),
           balanceRefundedUnits: units,
         });
+
         return;
       }
 
       if (nextStatus === "approved") {
         if (wasDeducted) {
           tx.update(leaveRef, adminPayload);
+
+          shouldCreateNotification = true;
+          notificationUserId = leave.userId;
+          notificationMessage = `${leave.leaveName} (${leave.leaveType}) approved`;
           return;
         }
 
@@ -2722,7 +3132,12 @@ const adminUpdateLeaveStatus = async (leaveId, decision, leaveRow) => {
 
         tx.set(
           balRef,
-          { userId: leave.userId, year, balances, updatedAt: new Date().toISOString() },
+          {
+            userId: leave.userId,
+            year,
+            balances,
+            updatedAt: new Date().toISOString(),
+          },
           { merge: true }
         );
 
@@ -2735,15 +3150,30 @@ const adminUpdateLeaveStatus = async (leaveId, decision, leaveRow) => {
           balanceRefundedAt: null,
           balanceRefundedUnits: null,
         });
+
+        shouldCreateNotification = true;
+        notificationUserId = leave.userId;
+        notificationMessage = `${leave.leaveName} (${leave.leaveType}) approved`;
         return;
       }
 
       tx.update(leaveRef, adminPayload);
     });
 
+    if (shouldCreateNotification && notificationUserId) {
+      await addDoc(collection(db, "notifications"), {
+        userId: notificationUserId,
+        type: "leave",
+        title: "Leave Approved",
+        message: notificationMessage,
+        date: serverTimestamp(),
+        read: false,
+      });
+    }
+
     notify(`✅ Admin ${decision}`);
     loadAllLeaves();
-    loadLeaveBalances(yearForReload); // ✅ refresh correct year
+    loadLeaveBalances(yearForReload);
   } catch (err) {
     console.error(err);
     notify("❌ Approve failed: " + err.message);
@@ -3420,6 +3850,10 @@ const leaveSummaryUids = Object.keys(usersMap || {})
   : <span className="badge yellow">Pending</span>;
 
   /* ---------------- render ---------------- */
+  if (authLoading) {
+  return <div style={{ padding: 20 }}>Loading...</div>;
+  }
+
   if (!user) {
     return (
       <div className="login-page">
@@ -3483,117 +3917,445 @@ const leaveSummaryUids = Object.keys(usersMap || {})
   </button>
 
   <span className="topbar-title">Simple'Z Attendance</span>
+
+  <div className="header-right">
+  <div className="noti-wrapper">
+  <button
+  className="noti-btn"
+  onClick={() => {
+    setShowNoti((prev) => !prev);
+    markAllRead();
+  }}
+  >
+  🔔
+  {unreadCount > 0 && (
+  <span className="noti-badge">{unreadCount}</span>
+  )}
+  </button>
+  </div>
+  </div>
+
 </div>
 
 {/* SIDEBAR */}
-<div className={`sidebar ${sidebarOpen ? "open" : ""}`}>
+<div className={`sidebar ${sidebarOpen ? "open" : ""} ${desktopSidebarCollapsed ? "collapsed" : ""}`}>
   <div className="brand">
+  <div className="brand-top">
     <h3>Simple'Z Attendance</h3>
-    <small><b>Hi, {name || user.email}</b></small>
+
+    <button
+type="button"
+className="desktop-collapse-btn"
+onClick={() => setDesktopSidebarCollapsed((prev) => !prev)}
+title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+>
+  {desktopSidebarCollapsed ? "☰" : "⟨⟨"}
+</button>
+    </div>
+
+    {!desktopSidebarCollapsed && (
+      <small><b>{name || user.email}</b>logged in as {role || user.role}</small>
+      
+    )}
   </div>
 
   <nav>
-   <button className="nav-item" onClick={() => {setActiveSidebar("my-panel"); setSidebarOpen(false);}}><span className="icon">🏠</span> My Dashboard</button>
-   <button className="nav-item" onClick={() => {setActiveSidebar("my-att");setSidebarOpen(false);}}><span className="icon">🕒</span> My Attendance</button>
-   <button className="nav-item" onClick={() => {setActiveSidebar("my-leave");setSidebarOpen(false);}}><span className="icon">📝</span> My Leave / OT</button>
-  <button className="nav-item" onClick={() => { setActiveSidebar("my-payslip");setSidebarOpen(false);}}> <span className="icon"> 🧾</span> My Payslip</button> 
-
-      {isLeader && (
+    <button  type="button"  className="menu-group-btn"  onClick={() => handleGroupClick("myMenu")}  title="My Menu">
+    {desktopSidebarCollapsed ? (<span className="group-icon">🏠</span>  ) : (
       <>
-      <div className="sidebar-section-title" style={{color:"#d7d8ff",fontWeight:"bold"}}>Leader Dashboard</div>
-      <button className="nav-item" onClick={() => {setActiveSidebar("member-att-panel"); setSidebarOpen(false);}}>
-        <span className="icon">👥</span> Members Attendance
-      </button>
-      <button className="nav-item" onClick={() => {setActiveSidebar("member-leave-panel"); setSidebarOpen(false);}}>
-        <span className="icon">👥</span> Members Leave Requests
-      </button>
-      <button className="nav-item" onClick={() => {setActiveSidebar("member-ot-panel"); setSidebarOpen(false);}}>
-        <span className="icon">👥</span> Members OT Requests
-      </button>
-    </>
+        <span>My Menu</span>
+       <span className="arrow">{openMenuGroup === "myMenu" ? "▾" : "▸"}</span>
+      </>
+    )}
+  </button>
+
+    {openMenuGroup === "myMenu" && (
+      <div className="menu-group-list">
+        <a className="nav-item" href="?tab=my-panel" onClick={(e) => handleTabClick(e, "my-panel")}>
+          <span className="icon">🏠</span>{!desktopSidebarCollapsed && <span className="nav-text"> My Dashboard </span>}
+        </a>
+        <a className="nav-item" href="?tab=my-att" onClick={(e) => handleTabClick(e, "my-att")}>
+          <span className="icon">🕒</span>{!desktopSidebarCollapsed && <span className="nav-text">My Attendance</span>}
+        </a>
+        <a className="nav-item" href="?tab=my-leave" onClick={(e) => handleTabClick(e, "my-leave")}>
+          <span className="icon">📝</span>{!desktopSidebarCollapsed && <span className="nav-text"> My Leave / OT</span>}
+        </a>
+        <a className="nav-item" href="?tab=my-po" onClick={(e) => handleTabClick(e, "my-po")}>
+          <span className="icon">📝</span>{!desktopSidebarCollapsed && <span className="nav-text"> My P/O Reports</span>}
+        </a>
+        <a className="nav-item" href="?tab=my-payslip" onClick={(e) => handleTabClick(e, "my-payslip")}>
+          <span className="icon">🧾</span>{!desktopSidebarCollapsed && <span className="nav-text">My Payslip</span>}
+        </a>
+      </div>
     )}
 
-    {isAdmin &&  (
+    {isLeader && (
       <>
-        <hr />
-        <div className="sidebar-section-title" style={{color:"#d7d8ff",fontWeight:"bold"}}>Admin Dashboard</div>
-        <div className="sidebar-section-title" style={{color:"#0ea5e9",fontWeight:"bold"}}>Employee Management</div>
-       {canAccessPayroll && (
-        <button className="nav-item" onClick={() => { setActiveSidebar("admin-employee-form"); setSidebarOpen(false); }}><span className="icon">🧾</span> Employee Information</button>
-         )}
-        <button  className="nav-item" onClick={() => {setActiveSidebar("admin-employee");setSidebarOpen(false);}}><span className="icon">👥</span> Employee List</button>
-        <button className="nav-item" onClick={() => {setActiveSidebar("admin-gps-setting");setSidebarOpen(false);}}><span className="icon">📍</span> Staff GPS Setting</button>
-        <div className="sidebar-section-title" style={{color:"#0ea5e9",fontWeight:"bold"}}>Attendance Management</div>
-        <button className="nav-item" onClick={() => {setActiveSidebar("admin-att-overview"); setSidebarOpen(false);}}><span className="icon">🗓️</span> Attendance Overview</button>
-        <button className="nav-item" onClick={() => {setActiveSidebar("admin-company-calendar"); setSidebarOpen(false);}}><span className="icon"><img src="https://flagcdn.com/16x12/mm.png" srcset="https://flagcdn.com/32x24/mm.png 2x, https://flagcdn.com/48x36/mm.png 3x"width="16"height="12"  alt="Myanmar"/></span> Company Calendar</button>
-        <button className="nav-item" onClick={() => {setActiveSidebar("admin-att");setSidebarOpen(false);}}><span className="icon">📊</span> All Attendance</button>
-        <button className="nav-item" onClick={() => {setActiveSidebar("admin-att-summary");setSidebarOpen(false);}}><span className="icon">📊</span> Monthly Attendance Summary</button>
-        {/*  <button className="nav-item" onClick={() => {setActiveSidebar("admin-summary");setSidebarOpen(false);}}><span className="icon">📅</span>Monthly Summary</button> */}
-        
+      
+      <button  type="button"  className="menu-group-btn"  onClick={() => handleGroupClick("leaderMenu")}  title="Leader Dashboard">
+      {desktopSidebarCollapsed ? (<span className="group-icon">👥</span>  ) : (
+        <>
+          <span>Leader Dashboard</span>
+        <span className="arrow">{openMenuGroup === "leaderMenu" ? "▾" : "▸"}</span>
+        </>
+      )}
+    </button>
 
-        <div className="sidebar-section-title" style={{color:"#0ea5e9",fontWeight:"bold"}}>Leave Management</div>
-        <button className="nav-item" onClick={() => {setActiveSidebar("admin-leave");setSidebarOpen(false);}}><span className="icon">📄</span>All Leave Requests</button>
-        <button className="nav-item" onClick={() => {setActiveSidebar("admin-leave-balance");setSidebarOpen(false);}}><span className="icon">📊</span> Leave Balance Management</button>
-        <button className="nav-item" onClick={() => {setActiveSidebar("admin-leave-summary");setSidebarOpen(false);}}><span className="icon">📝</span>All Staff Leave Summary</button>
-        <button className="nav-item" onClick={() => {setActiveSidebar("admin-po");setSidebarOpen(false);}}><span className="icon">💼</span>All Staff P/O Reports</button>
-        <button className="nav-item" onClick={() => {setActiveSidebar("admin-ot");setSidebarOpen(false);}}><span className="icon">⏫</span>All Overtime Requests</button>
-        
-        <div className="sidebar-section-title" style={{color:"#0ea5e9",fontWeight:"bold"}}>Payroll Management</div>
-    
-         {/* 🔐 Payroll – ADMIN ONLY */}
-        {canAccessPayroll && (
+        {openMenuGroup === "leaderMenu" && (
+          <div className="menu-group-list">
+            <a className="nav-item" href="?tab=member-att-panel" onClick={(e) => handleTabClick(e, "member-att-panel")}>
+              <span className="icon">👥</span>{!desktopSidebarCollapsed && <span className="nav-text">Members Attendance</span>}
+            </a>
+            <a className="nav-item" href="?tab=member-leave-panel" onClick={(e) => handleTabClick(e, "member-leave-panel")}>
+              <span className="icon">👥</span>{!desktopSidebarCollapsed && <span className="nav-text"> Members Leave Requests</span>}
+            </a>
+            <a className="nav-item" href="?tab=member-ot-panel" onClick={(e) => handleTabClick(e, "member-ot-panel")}>
+              <span className="icon">👥</span>{!desktopSidebarCollapsed && <span className="nav-text">Members OT Requests</span>}
+            </a>
+          </div>
+        )}
+      </>
+    )}
+
+    {isAdmin && (
+      <>
+      <button  type="button"  className="menu-group-btn"  onClick={() => handleGroupClick("adminEmployee")}  title="Employee Management">
+      {desktopSidebarCollapsed ? (<span className="group-icon">👤</span>  ) : (
+        <>
+          <span>Employee Management</span>
+        <span className="arrow">{openMenuGroup === "adminEmployee" ? "▾" : "▸"}</span>
+        </>
+      )}
+    </button>
+        {openMenuGroup === "adminEmployee" && (
+          <div className="menu-group-list">
+            {canAccessPayroll && (
+              <a className="nav-item" href="?tab=admin-employee-form" onClick={(e) => handleTabClick(e, "admin-employee-form")}>
+                <span className="icon">🧾</span>{!desktopSidebarCollapsed && <span className="nav-text"> Employee Information</span>}
+              </a>
+            )}
+            <a className="nav-item" href="?tab=admin-employee" onClick={(e) => handleTabClick(e, "admin-employee")}>
+              <span className="icon">👥</span>{!desktopSidebarCollapsed && <span className="nav-text"> Employee Location</span>}
+            </a>
+            <a className="nav-item" href="?tab=admin-gps-setting" onClick={(e) => handleTabClick(e, "admin-gps-setting")}>
+              <span className="icon">📍</span>{!desktopSidebarCollapsed && <span className="nav-text"> Staff GPS Setting</span>}
+            </a>
+          </div>
+     )}
+
+
+        <button  type="button"  className="menu-group-btn"  onClick={() => handleGroupClick("adminAttendance")}  title="Attendance Management">
+        {desktopSidebarCollapsed ? (<span className="group-icon">🕒</span>  ) : (
           <>
-          <button className="nav-item" onClick={() => {setActiveSidebar("admin-payroll"); setSidebarOpen(false);}}><span className="icon">🏦</span>Payroll Calculator</button>
-          <button className="nav-item" onClick={() => { setActiveSidebar("admin-payroll-summary"); setSidebarOpen(false); }}><span className="icon">💰</span> Payroll Summary</button>
+            <span>Attendance Management</span>
+          <span className="arrow">{openMenuGroup === "adminAttendance" ? "▾" : "▸"}</span>
           </>
         )}
-        
-        <button className="nav-item" onClick={() => { setActiveSidebar("admin-export"); setSidebarOpen(false); }}><span className="icon">📤</span> Export Excel</button>
-
-       {/*  <div className="sidebar-actions">
-          <button className="btn export" onClick={exportCSV}>⬇ Export CSV</button>
-          <button className="btn red" onClick={()=>backupAndClear("all")}>🧹 Backup+Clear All</button>
-        </div> */}
-
-        <div style={{ marginBottom: "15px",marginTop:"15px",color:"AccentColor" }}>
-          <p><b>Reset Month:</b></p>
-          <input type="month" value={resetMonth} onChange={(e) => setResetMonth(e.target.value)}/>
-        </div>
-        <button className="btn red" onClick={() => clearMonthData(resetMonth)}>🧹 Reset Selected Month</button>
-    
-        </>
+      </button>
+        {openMenuGroup === "adminAttendance" && (
+          <div className="menu-group-list">
+            <a className="nav-item" href="?tab=admin-att-overview" onClick={(e) => handleTabClick(e, "admin-att-overview")}>
+              <span className="icon">🗓️</span>{!desktopSidebarCollapsed && <span className="nav-text"> Attendance Overview</span>}
+            </a>
+            <a className="nav-item" href="?tab=admin-company-calendar" onClick={(e) => handleTabClick(e, "admin-company-calendar")}>
+              <span className="icon"><img src="https://flagcdn.com/16x12/mm.png" srcset="https://flagcdn.com/32x24/mm.png 2x, https://flagcdn.com/48x36/mm.png 3x"width="16"height="12"  alt="Myanmar"/></span> {!desktopSidebarCollapsed && <span className="nav-text">Company Calendar</span>}
+            </a>
+            <a className="nav-item" href="?tab=admin-att" onClick={(e) => handleTabClick(e, "admin-att")}>
+              <span className="icon">📊</span> {!desktopSidebarCollapsed && <span className="nav-text">All Staff Attendance</span>}
+            </a>
+            <a className="nav-item" href="?tab=admin-att-summary" onClick={(e) => handleTabClick(e, "admin-att-summary")}>
+              <span className="icon">📊</span> {!desktopSidebarCollapsed && <span className="nav-text">Monthly Attendance Summary</span>}
+            </a>
+          </div>
         )}
-        </nav>
 
-        <div style={{marginTop:20}}>
-        <button className="btn out" onClick={handleLogout}>Logout</button>
+
+        <button  type="button"  className="menu-group-btn"  onClick={() => handleGroupClick("adminLeave")}  title="Leave Management">
+        {desktopSidebarCollapsed ? (<span className="group-icon">📝</span>  ) : (
+          <>
+            <span>Leave Management</span>
+          <span className="arrow">{openMenuGroup === "adminLeave" ? "▾" : "▸"}</span>
+          </>
+        )}
+       </button>
+        {openMenuGroup === "adminLeave" && (
+          <div className="menu-group-list">
+            <a className="nav-item" href="?tab=admin-leave" onClick={(e) => handleTabClick(e, "admin-leave")}>
+              <span className="icon">📄</span> {!desktopSidebarCollapsed && <span className="nav-text">All Staff Leave Requests</span>}
+            </a>
+            <a className="nav-item" href="?tab=admin-leave-balance" onClick={(e) => handleTabClick(e, "admin-leave-balance")}>
+              <span className="icon">📊</span> {!desktopSidebarCollapsed && <span className="nav-text">All Staff Leave Balance Management</span>}
+            </a>
+            <a className="nav-item" href="?tab=admin-leave-summary" onClick={(e) => handleTabClick(e, "admin-leave-summary")}>
+              <span className="icon">📝</span> {!desktopSidebarCollapsed && <span className="nav-text">All Staff Leave Summary</span>}
+            </a>
+            <a className="nav-item" href="?tab=admin-po" onClick={(e) => handleTabClick(e, "admin-po")}>
+              <span className="icon">💼</span> {!desktopSidebarCollapsed && <span className="nav-text">All Staff P/O Reports</span>}
+            </a>
+            <a className="nav-item" href="?tab=admin-ot" onClick={(e) => handleTabClick(e, "admin-ot")}>
+              <span className="icon">⏫</span> {!desktopSidebarCollapsed && <span className="nav-text">All Overtime Requests</span>}
+            </a>
+          </div>
+        )}
+
+         <button  type="button"  className="menu-group-btn"  onClick={() => handleGroupClick("adminPayroll")}  title="Payroll Management">
+        {desktopSidebarCollapsed ? (<span className="group-icon">💰</span>  ) : (
+          <>
+            <span>Payroll Management</span>
+          <span className="arrow">{openMenuGroup === "adminPayroll" ? "▾" : "▸"}</span>
+          </>
+        )}
+       </button>
+
+        
+        {openMenuGroup === "adminPayroll" && (
+          <div className="menu-group-list">
+            {canAccessPayroll && (
+              <>
+                <a className="nav-item" href="?tab=admin-payroll" onClick={(e) => handleTabClick(e, "admin-payroll")}>
+                  <span className="icon">🏦</span> {!desktopSidebarCollapsed && <span className="nav-text">Payroll Calculator</span>}
+                </a>
+                <a className="nav-item" href="?tab=admin-payroll-summary" onClick={(e) => handleTabClick(e, "admin-payroll-summary")}>
+                  <span className="icon">💰</span> {!desktopSidebarCollapsed && <span className="nav-text">Payroll Summary</span>}
+                </a>
+              </>
+            )}
+
+            <a className="nav-item" href="?tab=admin-export" onClick={(e) => handleTabClick(e, "admin-export")}>
+              <span className="icon">📤</span> {!desktopSidebarCollapsed && <span className="nav-text">Export Excel</span>}
+            </a>
+          </div>
+        )}
+      </>
+    )}
+
+    <div style={{marginTop:20}}>
+       {/*  <button className="btn out" onClick={handleLogout}>Logout</button> */}
+      <button className="btn out logout-btn"  onClick={handleLogout} title="Logout">
+        {desktopSidebarCollapsed ? (
+          <img src="/logout_icon.png" alt="Logout" className="logout-icon" />
+        ) : (
+          <>
+            <img src="/logout_icon.png" alt="" className="logout-icon" />
+            <span style={{ marginLeft: 8 }}>Logout</span>
+          </>
+        )}
+      </button>
         </div>
         <p>Copyright 2026 Simple'Z All right reserved.</p>
-        </div>
+
+    </nav>
+
+    </div>
      
 
 
       {/* main content */}
-      <main className="main">
+      <main className={`main ${desktopSidebarCollapsed ? "expanded" : ""}`}>
         <header className="main-header">
-          <h1>{activeSidebar.startsWith("admin") ? "Admin Dashboard" : "My Dashboard"}</h1>
+          <h1>{activeSidebar.startsWith("admin") ? "Admin Dashboard" : "Employee Dashboard"}</h1>
           <div className="main-sub">{message}</div>
         </header>
 
+        <div className="header-right">
+        <div className="noti-wrapper">
+        <button
+        className="noti-btn"
+        onClick={() => {
+          setShowNoti((prev) => !prev);
+          markAllRead();
+        }}
+        >
+        🔔
+        {unreadCount > 0 && (
+        <span className="noti-badge">{unreadCount}</span>
+        )}
+        </button>
+        </div>
+        </div>
+
+          {showNoti && (
+            <div className="noti-dropdown">
+              <div className="noti-header">
+                <b>Notification</b><br />
+                <small>
+                  {notifications.length === 0
+                    ? "You have no messages"
+                    : `You have ${unreadCount} new messages`}
+                </small>
+              </div>
+
+              <div className="noti-list">
+                {notifications.length === 0 ? (
+                  <p>No notifications</p>
+                ) : (
+                  notifications.map((n) => (
+                    <div key={n.id} className="noti-item">
+                      <div className="noti-icon">
+                        {n.type === "leave" && "A"}
+                        {n.type === "payslip" && "ℹ️"}
+                        {n.type === "ot" && "⏫"}
+                      </div>
+
+                      <div>
+                        <div>{n.message}</div>
+                        <small>
+                          {n.date?.toDate ? n.date.toDate().toLocaleDateString() : ""}
+                        </small>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
         {/* My Panel (clock, save location, personal lists) */}
         {activeSidebar === "my-panel" && (
-          <section className="card">
-            <h2>My Attendance</h2>
-            <div style={{display:"flex", gap:12, alignItems:"center", flexWrap:"wrap"}}>
-              <button className="btn in" onClick={clockIn}>Clock In</button>
-              <button className="btn out" onClick={clockOut}>Clock Out</button>
-              
+        <section className="dashboard-page">
+        <div className="dashboard-header">
+        <div>
+        <h1>My Dashboard</h1>
+        <p>  Hello {name || user?.email}, {getGreeting()}</p>
+        </div>
+
+        <div className="dashboard-date-card">
+        <span>Today</span>
+        <strong>{todayStr}</strong>
+        </div>
+        </div>
+
+    <div className="dashboard-main-layout">
+      <div className="dashboard-left">
+        <div className="dashboard-panel">
+          <div className="card-title-row">
+            <h3>My Daily Attendance</h3>
+          </div>
+
+          <div className="daily-attendance-box">
+            <div className="shift-label">
+              {todayAttendance?.locationName || "MAINSHIFT"}
             </div>
-              
-            {/* ---- P/O Report Section ---- */}
-            <section className="card" style={{ marginTop: 20 }}>
-              <h2>Permission Out (P/O) Report</h2>
-              <div className="form" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+
+            <div className="daily-date">
+              {new Date(todayStr).toLocaleDateString("en-US", {
+                month: "long",
+                day: "numeric",
+                weekday: "long",
+              })}
+            </div>
+
+            <div className="today-status-grid two-cols">
+              <div className="mini-stat">
+                <span>Check In</span>
+                <strong>{todayClockIn}</strong>
+                <div className="mini-line green"></div>
+              </div>
+
+              <div className="mini-stat">
+                <span>Check Out</span>
+                <strong>{todayClockOut}</strong>
+                <div className="mini-line blue"></div>
+              </div>
+            </div>
+
+            <div className="today-status-grid two-cols" style={{ marginTop: 14 }}>
+              <div className="mini-stat">
+                <span>Status</span>
+                <strong>{attendanceStatus}</strong>
+              </div>
+
+              <div className="mini-stat">
+                <span>Location</span>
+                <strong>{todayAttendance?.locationName || "-"}</strong>
+              </div>
+            </div>
+
+            <div className="dashboard-actions" style={{ marginTop: 20 }}>
+              <button className="action-btn success" onClick={clockIn}>
+                Clock In
+              </button>
+              <button className="action-btn danger" onClick={clockOut}>
+                Clock Out
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="dashboard-panel">
+          <div className="card-title-row">
+            <h3>My Leave History</h3>
+          </div>
+
+          <div className="leave-table-wrap">
+            <table className="leave-history-table">
+              <thead>
+                <tr>
+                  <th>Leave Name</th>
+                  <th>Taken</th>
+                  <th>Balance</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {leaveSummaryRows.map((row) => (
+                  <tr key={row.leaveName}>
+                    <td>{row.leaveName}</td>
+                    <td>{row.taken}</td>
+                    <td>{row.balance}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div className="dashboard-right">
+        <div className="dashboard-panel">
+          <div className="card-title-row">
+            <h3>My Monthly Attendance</h3>
+          </div>
+
+          <div className="monthly-cards-grid">
+            <div className="summary-card mint">
+              <div className="summary-number">{monthPresentDays}</div>
+              <div className="summary-label">Attendance</div>
+            </div>
+
+            <div className="summary-card pink">
+              <div className="summary-number">{monthLeaveDays}</div>
+              <div className="summary-label">Leave</div>
+            </div>
+
+            <div className="summary-card sand">
+              <div className="summary-number">{monthLateCount}</div>
+              <div className="summary-label">Late In</div>
+            </div>
+
+            <div className="summary-card sky">
+              <div className="summary-number">{monthEarlyOutCount}</div>
+              <div className="summary-label">Early Out</div>
+            </div>
+          </div>
+
+          <div className="monthly-list">
+            <div className="monthly-list-row">
+              <span>This Month</span>
+              <strong>{currentMonthStr}</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+)}
+
+{/* ---- P/O Report Section ---- */}
+        {activeSidebar === "my-po" && (
+          <section className="card">
+            <h2>Permission Out (P/O) Report</h2>
+              <div className="form" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end" }}>
                 <div class="form-group">
                   <label>Date</label>
                   <input type="date" value={poDate} onChange={(e) => setPoDate(e.target.value)} />
@@ -3606,6 +4368,12 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                    <label>End Time</label>
                   <input type="time" value={poTo} onChange={(e) => setPoTo(e.target.value)} />
                 </div>
+                <div className="form-group">
+                <label>Reason</label>
+                <input
+                  type="text" placeholder="Reason"  value={poReason} onChange={(e) => setpoReason(e.target.value)}
+                />
+              </div>
                 <button className="btn submit" onClick={addPoReport}>Add P/O</button>
               </div>
 
@@ -3616,6 +4384,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                     <th>From</th>
                     <th>To</th>
                     <th>Total</th>
+                    <th>Reason</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3628,6 +4397,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                         <td>{p.fromTime}</td>
                         <td>{p.toTime}</td>
                         <td>{p.totalTimeByHour}</td>
+                        <td>{p.POreason}</td>
                       </tr>
                     ))
                   )}
@@ -3635,9 +4405,6 @@ const leaveSummaryUids = Object.keys(usersMap || {})
               </table>
             </section>
 
-            
-          </section>
-          
         )}
 
         {/* My Attendance list */}
@@ -3738,9 +4505,10 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                       <button
                         className="btn small"
                         disabled={lv.status !== "pending"}
-                        style={{
-                          opacity: lv.status !== "pending" ? 0.4 : 1,
-                          cursor: lv.status !== "pending" ? "not-allowed" : "pointer"
+                       style={{
+                          opacity: lv.status !== "pending" ? 0.6 : 1,
+                          cursor: lv.status !== "pending" ? "not-allowed" : "pointer",
+                          color: "#000",
                         }}
                         onClick={() => {
                           if (lv.status !== "pending") return;
@@ -3802,7 +4570,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
 
 
             {/* ---- Your Leave Summary ---- */}
-            <h3 style={{ marginTop: 30 }}>Your Leave Summary</h3>
+            <h3 style={{ marginTop: 30 }}>My Leave Summary</h3>
             <table className="data-table">
               <thead>
                 <tr>
@@ -3812,35 +4580,6 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                   <th>Balance</th>
                 </tr>
               </thead>
-             {/*  <tbody>
-           
-                  {summaryLeaveTypes.map((leaveName, i) => {
-                  const base = leaveBalances?.[user.uid]?.balances?.[leaveName]?.base ?? 0;
-                  const carry = leaveBalances?.[user.uid]?.balances?.[leaveName]?.carry ?? 0;
-                  const allowance = Number(base) + Number(carry);
-
-                  const taken = leaves
-                  .filter((lv) => lv.leaveName === leaveName && lv.status === "approved")
-                  .reduce((acc, lv) => {
-                  const start = new Date(lv.startDate);
-                  const end = new Date(lv.endDate);
-                  const days = (end - start) / (1000 * 60 * 60 * 24) + 1;
-                  return acc + (days > 0 ? days : 0);
-                  }, 0);
-
-                  const balance = Math.max(0, allowance - taken);
-
-                  return (
-                  <tr key={i}>
-                  <td>{leaveName}</td>
-                  <td>{allowance}</td>
-                  <td>{taken}</td>
-                  <td>{balance}</td>
-                  </tr>
-                  );
-                  })}
-
-              </tbody> */}
               <tbody>
               {summaryLeaveTypes.map((leaveName, i) => {
                 const base =
@@ -3934,7 +4673,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                     <td>{ps.paymonth}</td>
                     <td>{ps.status}</td>
                     <td>
-                      <button className="btn small green" onClick={() => exportPayslip(ps.payrollData)}>Payslip</button>
+                      <button className="btn small green" onClick={() => exportPayslip(ps.payrollData)}>Export Payslip</button>
                    
                     </td>
                   </tr>
@@ -4535,7 +5274,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
 
   {isAdmin && activeSidebar === "admin-employee" && (
   <section className="card">
-    <h2>Employee Management</h2>
+    <h2>Employee Location</h2>
 
     <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
       <input
@@ -4798,7 +5537,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
         onChange={(e) => setGpsSettingSearch(e.target.value)}
         style={{ flex: 1, minWidth: 240 }}
       />
-      <button className="btn small" onClick={() => setGpsSettingSearch("")}>Clear</button>
+      <button className="btn" onClick={() => setGpsSettingSearch("")}>Clear</button>
     </div>
 
     <div style={{ marginBottom: 12, background: "#f8fafc", border: "1px solid #e5e7eb", padding: 12, borderRadius: 10 }}>
@@ -5133,15 +5872,12 @@ const leaveSummaryUids = Object.keys(usersMap || {})
 
             />
             <button className="btn" onClick={() => setAttendanceSearch("")}>Clear</button>
+
+            <button className="btn blue" onClick={() => openCreateAttendance ()}> ➕ Add Attendance</button>
+
           </div>
 
-            <button
-            className="btn blue"
-            onClick={() => openCreateAttendance ()}
-            >
-            ➕ Add Attendance
-            </button>
-            </div>
+           </div>
 
             <table className="data-table">
               <thead>
@@ -5377,7 +6113,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
         {/* ADMIN: All Leave Requests */}
         {isAdmin && activeSidebar==="admin-leave" && (
           <section className="card">
-            <h2>All Leave Requests</h2>
+            <h2>All Staff Leave Requests</h2>
 
             <div className="filters all_leave_req">
               <input
@@ -5546,18 +6282,18 @@ const leaveSummaryUids = Object.keys(usersMap || {})
 
          {/* ---- Admin: all staff leave balance edit ---- */}
         {isAdmin && activeSidebar === "admin-leave-balance" && (
-            <section className="card">
-        <h2>Leave Balance Management ({currentYear})</h2>
+        <section className="card">
+        <h2>All Staff Leave Balance Management ({currentYear})</h2>
 
         {/* Search */}
-        <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+        <div style={{ display: "flex", gap: 10, marginBottom: 14, alignItems:"baseline" }}>
           <input
             value={leaveSearch}
             onChange={(e) => setLeaveSearch(e.target.value)}
             placeholder="Search by Employee ID, name, email..."
             style={{ flex: 1 }}
           />
-          <button className="btn small" onClick={() => setLeaveSearch("")}>Clear</button>
+          <button className="btn" onClick={() => setLeaveSearch("")}>Clear</button>
         </div>
 
         <div style={{ overflowX: "auto" }}>
@@ -5710,7 +6446,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
           <section className="card">
             <h2>All Staff Leave Summary</h2>
 
-            <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "baseline", marginBottom: 12 }}>
             <input
               style={{ flex: 1 }}
               placeholder="Search by employee ID, name, email..."
@@ -5732,67 +6468,6 @@ const leaveSummaryUids = Object.keys(usersMap || {})
                   <th>Balance</th>
                 </tr>
               </thead>
-             {/*  <tbody>
-                {Object.keys(usersMap).map((uid)  => {
-                  
-                  const leaveTypes = {
-                    "Casual Leave": 6,
-                    "Annual Leave": 10,
-                    "Medical Leave": 90,
-                    "WithoutPay Leave": 10,
-                    "Maternity Leave": 98,
-                  };
-
-                  
-                  const selectedType = leaveSelections[uid] || "Casual Leave";
-
-                 
-                  const staffLeaves = allLeaves.filter(
-                    (lv) => lv.userId === uid && lv.status === "approved"
-                  );
-                 
-                  const allowance = (leaveBalances[uid]?.balances?.[selectedType]?.base || 0) +
-                                     (leaveBalances[uid]?.balances?.[selectedType]?.carry || 0);
-
-                  const taken = staffLeaves
-                    .filter((lv) => lv.leaveName === selectedType)
-                    .reduce((acc, lv) => {
-                      const start = new Date(lv.startDate);
-                      const end = new Date(lv.endDate);
-                      const days =
-                        (end - start) / (1000 * 60 * 60 * 24) + 1; // inclusive
-                      return acc + (days > 0 ? days : 0);
-                    }, 0);
-                  const balance = Math.max(0, allowance - taken);
-
-                  return (
-                    <tr key={uid}>
-                      <td>{displayUser(uid)}</td>
-                     
-                      <td>
-                        <select
-                          value={selectedType}
-                          onChange={(e) =>
-                            setLeaveSelections((prev) => ({
-                              ...prev,
-                              [uid]: e.target.value,
-                            }))
-                          }
-                        >
-                          {Object.keys(leaveTypes).map((name) => (
-                            <option key={name}>{name}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td>{allowance}</td>
-                      <td>{taken}</td>
-                      <td style={{ color: balance === 0 ? "red" : "inherit" }}>
-                        {balance}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody> */}
               <tbody>
                 {leaveSummaryUids.map((uid) => {
                   const leaveTypes = {
@@ -5956,130 +6631,265 @@ const leaveSummaryUids = Object.keys(usersMap || {})
         {canAccessPayroll && isAdmin && activeSidebar === "admin-payroll" && (
           <section className="card">
             <h2>Payroll Calculator</h2>
-            <PayrollCalculator usersMap={usersMap} />
+             <PayrollCalculator usersMap={usersMap} employees={employees} />
           </section>
         )} 
 
 
        {canAccessPayroll && isAdmin && activeSidebar === "admin-payroll-summary" && (
-        <section className="card">
-        <h2>Payroll Summary (All Calculated Fields)</h2>
-        <div className="table-scroll">
-        <table className="data-table payroll-summary">
-          <thead>
+  <section className="card">
+    <h2>Payroll Summary</h2>
+
+    <div className="table-scroll">
+      <table className="data-table payroll-summary-clean">
+        <thead>
           <tr>
-          <th>Name</th>
-          <th>社員番号</th>
-          <th>語力</th>
-          <th>種別</th>
-          <th>役職</th>
-          <th>チーム</th>
-          <th>所定日数</th>
-          <th>出勤日数</th>
-          <th>実働時間</th>
-          <th>有給日数</th>
-          <th>臨時休暇</th>
-          <th>欠勤日数</th>
-          <th>休日出勤日数</th>
-          <th>休日出勤時間</th>
-          <th>残業時間</th>
-          <th>遅刻時間</th>
-          <th>語力手当</th>
-          <th>役職手当</th>
-          <th>取締役手当</th>
-          <th>基本給(最新)</th>
-          <th>固定残業</th>
-          <th>欠勤控除</th>
-          <th>遅刻控除</th>
-          <th>固定残業控除</th>
-          <th>SSB</th>
-          <th>所得税</th>
-          <th>残業手当</th>
-          <th>休日手当</th>
-          <th>在宅手当</th>
-          <th>賞与</th>
-          <th>給与振込額</th>
-          <th>総支給額(優遇レート)</th>
-          <th>CBレート</th>
-          <th>Date</th>
-          <th>Pay Month</th>
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody>
+            <th>Name</th>
+            <th>Employee ID</th>
+            <th>Position</th>
+            <th>Team</th>
+            <th>Salary<br></br>Transfer</th>
+            <th>Salary<br></br>in Rate</th>
+            <th>Date</th>
+            <th>Pay Month</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+
+        <tbody>
         {allPayroll.length === 0 ? (
-          <tr><td colSpan="44">No payroll records found.</td></tr>
+        <tr>
+        <td colSpan="9">No payroll records found.</td>
+        </tr>
         ) : (
-          allPayroll.map((p) => (
-            <tr key={p.id}>
-              <td>{p.name}</td>
-              <td>{p.staffId}</td>
-              <td>{p.languageLevel}</td>
-              <td>{p.type}</td>
-              <td>{p.staffposition}</td>
-              <td>{p.staffteam}</td>
-              <td>{p.standardDays}</td>
-              <td>{p.workedDays}</td>
-              <td>{p.actualHours}</td>
-              <td>{p.annualLeave}</td>
-              <td>{p.casualLeave}</td>
-              <td>{p.absentDays}</td>
-              <td>{p.holidayWorkDays}</td>
-              <td>{p.holidayWorkHours}</td>
-              <td>{p.overtimeHours}</td>
-              <td>{p.lateHours}</td>
-              <td>{p.languageAllowance?.toLocaleString()}</td>
-              <td>{p.jobAllowance?.toLocaleString()}</td>
-              <td>{p.directorAllowance?.toLocaleString()}</td>
-              <td>{p.basicLatest?.toLocaleString()}</td>
-              <td>{p.fixedOvertime?.toLocaleString()}</td>
-              <td>{p.absenceDeduction?.toLocaleString()}</td>
-              <td>{p.lateDeduction?.toLocaleString()}</td>
-              <td>{p.fixedOvertimeDeduction?.toLocaleString()}</td>
-              <td>{p.ssb?.toLocaleString()}</td>
-              <td>{p.incomeTax?.toLocaleString()}</td>
-              <td>{p.overtimeAllowance?.toLocaleString()}</td>
-              <td>{p.holidayAllowance?.toLocaleString()}</td>
-              <td>{p.wfhAllowance?.toLocaleString()}</td>
-              <td>{p.bonus?.toLocaleString()}</td>
-              <td>{p.salaryTransfer?.toLocaleString()}</td>
-              <td>{p.preferentialTotal?.toLocaleString()}</td>
-              <td>{p.cbRate}</td>
-              <td>{p.createdAt?.slice(0,10)}</td>
-              <td>For {p.month}</td>
-              <td>
-                <div style={{ display: "flex", justifyContent: "center", gap: "3px" }}>
-                <button className="btn small blue" onClick={() => setSelectedPayroll(p)}>View</button>
-                <button className="btn small green" onClick={() => exportPayslip(p)}>Payslip</button>
-                <button className="btn small blue" onClick={() => sendPayslip(p)}>Send</button>
-                </div>
-              </td>
-            </tr>
-          ))
+        allPayroll.map((p) => {
+          const fullName = p.name || "";
+
+          const match = fullName.match(/^([^\u3040-\u30FF]*)([\u3040-\u30FF].*)?$/);
+
+          const enName = match?.[1]?.trim() || fullName;
+          const jpName = match?.[2]?.trim() || "";
+
+        return (
+        <tr key={p.id}>
+          <td>
+            <div style={{ fontWeight: 700 }}>{enName}</div>
+            {jpName && (
+              <div style={{ fontSize: 14, color: "#666" }}>{jpName}</div>
+            )}
+            <div style={{ fontSize: 12, color: "#777" }}>
+              {p.languageLevel}
+            </div>
+          </td>
+
+          <td>{p.staffId}</td>
+          <td>{p.staffposition}</td>
+          <td>{p.staffteam}</td>
+          <td>{p.salaryTransfer?.toLocaleString()}</td>
+          <td>{p.preferentialTotal?.toLocaleString()}</td>
+          <td>{p.createdAt?.slice(0, 10)}</td>
+          <td>For {p.month}</td>
+          <td>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                gap: "6px",
+                flexWrap: "wrap",
+              }}
+            >
+              <button
+                className="btn small blue"
+                onClick={() => setSelectedPayroll(p)}
+              >
+                View
+              </button>
+              <button
+                className="btn small green"
+                onClick={() => exportPayslip(p)}
+              >
+                Download
+              </button>
+              <button
+                className="btn small blue"
+                onClick={() => sendPayslip(p)}
+              >
+                Send
+              </button>
+              <button
+                className="btn small red"
+                onClick={() => deletePayrollSummary(p.id)}
+              >
+                🗑
+              </button>
+            </div>
+          </td>
+        </tr>
+        );
+        })
         )}
-      </tbody>
-    </table>
+        </tbody>
+      </table>
     </div>
 
-    {/* Modal for details */}
-   {selectedPayroll && (
+    {selectedPayroll && (
       <div className="modal-overlay" onClick={() => setSelectedPayroll(null)}>
-        <div className="modal" onClick={(e) => e.stopPropagation()}>
-          <h3>{selectedPayroll.name} - Detailed Payroll</h3>
-          <div className="modal-content">
-            {Object.entries(selectedPayroll).map(([key, value]) => (
-              <div key={key} className="modal-row">
-                <strong>{key}</strong>
-                <span>{typeof value === "number" ? value.toLocaleString() : String(value)}</span>
-              </div>
-            ))}
+        <div className="modal payroll-detail-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="payroll-modal-header">
+            <div>
+              <h3 style={{ marginBottom: 4 }}>{selectedPayroll.name} - Full Payroll Detail</h3>
+              <p style={{ margin: 0, color: "#666" }}>
+                {selectedPayroll.staffId} • For {selectedPayroll.month}
+              </p>
+            </div>
+            <button className="btn red" onClick={() => setSelectedPayroll(null)}>Close</button>
           </div>
-          <button className="btn red" onClick={() => setSelectedPayroll(null)}>Close</button>
+
+          {(() => {
+            const requiredFields = [
+              "name","staffId","languageLevel","type","staffposition","staffteam",
+              "standardDays","workedDays","actualHours","annualLeave","casualLeave","absentDays",
+              "holidayWorkDays","holidayWorkHours","overtimeHours","lateHours",
+              "languageAllowance","jobAllowance","directorAllowance",
+              "basicLatest","fixedOvertime",
+              "absenceDeduction","lateDeduction","fixedOvertimeDeduction","ssb","incomeTax",
+              "overtimeAllowance","holidayAllowance","wfhAllowance","bonus",
+              "salaryTransfer","preferentialTotal","cbRate","createdAt","month"
+            ];
+
+            const missingFields = requiredFields.filter(
+              (key) =>
+                selectedPayroll[key] === undefined ||
+                selectedPayroll[key] === null ||
+                selectedPayroll[key] === ""
+            );
+
+            const formatValue = (value) => {
+              if (value === undefined || value === null || value === "") return "-";
+              if (typeof value === "number") return value.toLocaleString();
+              if (typeof value === "boolean") return value ? "Yes" : "No";
+              return String(value);
+            };
+
+            const sections = [
+              {
+                title: "Employee Info",
+                fields: [
+                  ["Name", "name"],
+                  ["社員番号", "staffId"],
+                  ["語力", "languageLevel"],
+                  ["種別", "type"],
+                  ["役職", "staffposition"],
+                  ["チーム", "staffteam"]
+                ]
+              },
+              {
+                title: "Attendance",
+                fields: [
+                  ["所定日数", "standardDays"],
+                  ["出勤日数", "workedDays"],
+                  ["実働時間", "actualHours"],
+                  ["有給日数", "annualLeave"],
+                  ["臨時休暇", "casualLeave"],
+                  ["欠勤日数", "absentDays"],
+                  ["休日出勤日数", "holidayWorkDays"],
+                  ["休日出勤時間", "holidayWorkHours"],
+                  ["残業時間", "overtimeHours"],
+                  ["遅刻時間", "lateHours"]
+                ]
+              },
+              {
+                title: "Allowances / Earnings",
+                fields: [
+                  ["語力手当", "languageAllowance"],
+                  ["役職手当", "jobAllowance"],
+                  ["取締役手当", "directorAllowance"],
+                  ["基本給(最新)", "basicLatest"],
+                  ["固定残業", "fixedOvertime"],
+                  ["残業手当", "overtimeAllowance"],
+                  ["休日手当", "holidayAllowance"],
+                  ["在宅手当", "wfhAllowance"],
+                  ["賞与", "bonus"]
+                ]
+              },
+              {
+                title: "Deductions",
+                fields: [
+                  ["欠勤控除", "absenceDeduction"],
+                  ["遅刻控除", "lateDeduction"],
+                  ["固定残業控除", "fixedOvertimeDeduction"],
+                  ["SSB", "ssb"],
+                  ["所得税", "incomeTax"]
+                ]
+              },
+              {
+                title: "Payment Summary",
+                fields: [
+                  ["給与振込額", "salaryTransfer"],
+                  ["総支給額(優遇レート)", "preferentialTotal"],
+                  ["CBレート", "cbRate"],
+                  ["Date", "createdAt"],
+                  ["Pay Month", "month"]
+                ]
+              }
+            ];
+
+            return (
+              <>
+                <div
+                  style={{
+                    marginBottom: 16,
+                    padding: 12,
+                    borderRadius: 10,
+                    background: missingFields.length === 0 ? "#ecfdf5" : "#fff7ed",
+                    border: missingFields.length === 0 ? "1px solid #10b981" : "1px solid #f59e0b"
+                  }}
+                >
+                  <strong>
+                    Parse Check: {missingFields.length === 0 ? "All required fields parsed successfully" : `${missingFields.length} field(s) missing`}
+                  </strong>
+                  {missingFields.length > 0 && (
+                    <div style={{ marginTop: 8, fontSize: 14 }}>
+                      Missing: {missingFields.join(", ")}
+                    </div>
+                  )}
+                </div>
+
+                <div className="payroll-detail-grid">
+                  {sections.map((section) => (
+                    <div key={section.title} className="payroll-section-card">
+                      <h4>{section.title}</h4>
+                      {section.fields.map(([label, key]) => (
+                        <div key={key} className="modal-row">
+                          <strong>{label}</strong>
+                          <span>{formatValue(selectedPayroll[key])}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+
+                <details style={{ marginTop: 20 }}>
+                  <summary style={{ cursor: "pointer", fontWeight: 700 }}>
+                    Show Raw Parsed Data
+                  </summary>
+
+                  <div className="modal-content" style={{ marginTop: 12 }}>
+                    {Object.entries(selectedPayroll).map(([key, value]) => (
+                      <div key={key} className="modal-row">
+                        <strong>{key}</strong>
+                        <span>{formatValue(value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              </>
+            );
+          })()}
         </div>
       </div>
     )}
-
-  </section> 
+  </section>
 )}
 
     {isAdmin && activeSidebar === "admin-export" && (
