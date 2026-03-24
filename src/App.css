@@ -1199,26 +1199,6 @@ input[type="checkbox"] {
 /* --------------------------
  SIDEBAR
 --------------------------- */
-/* .sidebar {
-  position: fixed;
-  top: 0;
-  left: -270px;
-  width: 250px;
-  height: 100%;
-  color: white;
-  padding: 20px;
-  transition: left 0.35s ease;
-  z-index: 1000;
-  display: flex;
-  flex-direction: column;
-}
-
-.sidebar.open {
-  left: 0;
-  animation: slideIn 0.35s ease;
-  top: 20px;
-} */
-
 .sidebar {
   position: fixed;
   top: 0;
@@ -1271,38 +1251,56 @@ input[type="checkbox"] {
   .sidebar { top: 28px; }
 
   .hamburger {
-    width: 30px;
-    height: 22px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    cursor: pointer;
-    border: none;
-    background: transparent;
-    padding: 0;
-  }
+  width: 30px;
+  height: 22px;
+  position: relative;
+  flex: 0 0 30px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
 
-  .hamburger span {
-    display: block;
-    height: 3px;
-    width: 100%;
-    background: #fff;
-    border-radius: 2px;
-    transition: all 0.3s ease;
-  }
+.hamburger span {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: #fff;
+  border-radius: 2px;
+  transform-origin: center;
+  transition: transform 0.25s ease, opacity 0.2s ease;
+  will-change: transform;
+}
 
-  /* When open -> cross */
-  .hamburger.open span:nth-child(1) {
-    transform: rotate(45deg) translate(9px, 7px);
-  }
+.hamburger span:nth-child(1) { top: 0; }
+.hamburger span:nth-child(2) { top: 9px; }
+.hamburger span:nth-child(3) { top: 18px; }
 
-  .hamburger.open span:nth-child(2) {
-    opacity: 0;
-  }
+.hamburger.open span:nth-child(1) {
+  top: 9px;
+  transform: rotate(45deg);
+}
 
-  .hamburger.open span:nth-child(3) {
-    transform: rotate(-45deg) translate(5px, -5px);
-  }
+.hamburger.open span:nth-child(2) {
+  opacity: 0;
+  transform: scaleX(0.8);
+}
+
+.hamburger.open span:nth-child(3) {
+  top: 9px;
+  transform: rotate(-45deg);
+}
+
+.hamburger,
+.hamburger span {
+  -webkit-tap-highlight-color: transparent;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
 
   .form input[type="time"], .form input[type="date"] {
       width: 90%;
