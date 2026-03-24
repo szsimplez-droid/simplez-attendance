@@ -1836,6 +1836,7 @@ div.colheaders{
 @media (max-width: 1100px) {
   .dashboard-main-layout {
     grid-template-columns: 1fr;
+    width: 100%;
   }
 }
 
@@ -1856,7 +1857,7 @@ div.colheaders{
     width: 100%;
   }
   .dashboard-date-card {
-    width: 88%;
+    width: 90%;
   }
 
   .header-right {
