@@ -1165,13 +1165,8 @@ input[type="checkbox"] {
 --------------------------- */
 .overlay-dark {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0,0,0,0.55);
-  backdrop-filter: blur(2px);
-  animation: fadeIn 0.3s ease;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
   z-index: 900;
 }
 
@@ -1204,7 +1199,7 @@ input[type="checkbox"] {
 /* --------------------------
  SIDEBAR
 --------------------------- */
-.sidebar {
+/* .sidebar {
   position: fixed;
   top: 0;
   left: -270px;
@@ -1220,15 +1215,30 @@ input[type="checkbox"] {
 
 .sidebar.open {
   left: 0;
-}
-/* Slide + Fade animation */
-.sidebar.open {
   animation: slideIn 0.35s ease;
+  top: 20px;
+} */
+
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 250px;
+  height: 100%;
+  transform: translateX(-100%);
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
 }
-@keyframes slideIn {
+
+.sidebar.open {
+  transform: translateX(0);
+  z-index: 999;
+}
+
+/* @keyframes slideIn {
   from { left: -260px; opacity: 0; }
   to   { left: 0; opacity: 1; }
-}
+} */
 /* --------------------------
  SIDEBAR MENU
 --------------------------- */
@@ -1836,7 +1846,6 @@ div.colheaders{
 @media (max-width: 1100px) {
   .dashboard-main-layout {
     grid-template-columns: 1fr;
-    width: 100%;
   }
 }
 
@@ -1857,7 +1866,7 @@ div.colheaders{
     width: 100%;
   }
   .dashboard-date-card {
-    width: 90%;
+    width: 88%;
   }
 
   .header-right {
