@@ -950,6 +950,12 @@ useEffect(() => {
 }, [user, activeSidebar]);
 
 useEffect(() => {
+  if (!user || activeSidebar !== "my-po") return;
+  loadAllUsers();
+  loadPoReports(user.uid);
+}, [user, activeSidebar]);
+
+useEffect(() => {
   if (!user || !isAdmin || activeSidebar !== "admin-att") return;
 
   (async () => {
@@ -1719,22 +1725,69 @@ const deletePayrollSummary = async (id) => {
 };
 
 // Add new P/O record
+const [editingPo, setEditingPo] = useState(null);
+const openEditPo = (row) => {
+  setEditingPo(row);
+  setPoDate(row.date || "");
+  setPoFrom(row.fromTime || "");
+  setPoTo(row.toTime || "");
+  setpoReason(row.POreason || "");
+};
+
 const addPoReport = async () => {
   if (!poDate || !poFrom || !poTo || !poReason) return notify("Please fill all P/O fields.");
   const totalTimeByHour = calcPoDuration(poFrom, poTo);
   if (totalTimeByHour === "Invalid") return notify("Invalid time range.");
   await addDoc(collection(db, "poReports"), {
-      userId: user.uid,
-      date: poDate,
-      fromTime: poFrom,
-      toTime: poTo,
-      POreason:poReason,
-      totalTimeByHour,
-      createdAt: new Date().toISOString(),
-    });
+    userId: user.uid,
+    date: poDate,
+    fromTime: poFrom,
+    toTime: poTo,
+    POreason: poReason,
+    totalTimeByHour,
+    status: "pending",
+    createdAt: new Date().toISOString(),
+  });
   notify("✅ P/O report added.");
   setPoDate(""); setPoFrom(""); setPoTo("");setpoReason("");
   loadPoReports(user.uid);
+};
+
+const updatePoReport = async () => {
+  try {
+    if (!editingPo) return;
+    if (!poDate || !poFrom || !poTo || !poReason) {
+      return notify("Please fill all P/O fields.");
+    }
+
+    const totalTimeByHour = calcPoDuration(poFrom, poTo);
+    if (totalTimeByHour === "Invalid") {
+      return notify("Invalid time range.");
+    }
+
+    await updateDoc(doc(db, "poReports", editingPo.id), {
+      date: poDate,
+      fromTime: poFrom,
+      toTime: poTo,
+      POreason: poReason,
+      totalTimeByHour,
+      updatedAt: new Date().toISOString(),
+    });
+
+    notify("✅ P/O updated");
+
+    setEditingPo(null);
+    setPoDate("");
+    setPoFrom("");
+    setPoTo("");
+    setpoReason("");
+
+    loadPoReports(user.uid);
+    if (isAdmin) loadAllPoReports();
+  } catch (err) {
+    console.error(err);
+    notify("❌ Update failed: " + err.message);
+  }
 };
 
 // Load user’s P/O reports
@@ -1757,6 +1810,33 @@ const loadAllPoReports = async () => {
   list.sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
 
   setAllPoList(list);
+};
+
+const updatePoStatus = async (id, status) => {
+  await updateDoc(doc(db, "poReports", id), {
+    status,
+    actionBy: user.uid,
+    actionAt: new Date().toISOString(),
+  });
+
+  notify(`P/O ${status}`);
+  loadPoReports(user.uid);
+  if (isAdmin) loadAllPoReports();
+};
+
+const deletePoRequest = async (id) => {
+  try {
+    if (!window.confirm("Delete this P/O request?")) return;
+
+    await deleteDoc(doc(db, "poReports", id));
+    notify("🗑 P/O request deleted");
+
+    loadPoReports(user.uid);
+    if (isAdmin) loadAllPoReports();
+  } catch (err) {
+    console.error(err);
+    notify("❌ Delete failed: " + err.message);
+  }
 };
 
 
@@ -4351,61 +4431,6 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
   </section>
 )}
 
-{/* ---- P/O Report Section ---- */}
-        {activeSidebar === "my-po" && (
-          <section className="card">
-            <h2>Permission Out (P/O) Report</h2>
-              <div className="form" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end" }}>
-                <div class="form-group">
-                  <label>Date</label>
-                  <input type="date" value={poDate} onChange={(e) => setPoDate(e.target.value)} />
-                </div>
-                <div class="form-group">
-                   <label>Start Time</label>
-                <input type="time" value={poFrom} onChange={(e) => setPoFrom(e.target.value)} />
-                </div>
-                <div class="form-group">
-                   <label>End Time</label>
-                  <input type="time" value={poTo} onChange={(e) => setPoTo(e.target.value)} />
-                </div>
-                <div className="form-group">
-                <label>Reason</label>
-                <input
-                  type="text" placeholder="Reason"  value={poReason} onChange={(e) => setpoReason(e.target.value)}
-                />
-              </div>
-                <button className="btn submit" onClick={addPoReport}>Add P/O</button>
-              </div>
-
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>From</th>
-                    <th>To</th>
-                    <th>Total</th>
-                    <th>Reason</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {poList.length === 0 ? (
-                    <tr><td colSpan="4">No P/O records</td></tr>
-                  ) : (
-                    poList.map((p) => (
-                      <tr key={p.id}>
-                        <td>{p.date}</td>
-                        <td>{p.fromTime}</td>
-                        <td>{p.toTime}</td>
-                        <td>{p.totalTimeByHour}</td>
-                        <td>{p.POreason}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </section>
-
-        )}
 
         {/* My Attendance list */}
         {activeSidebar === "my-att" && (
@@ -4650,6 +4675,86 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
               </tbody>
             </table>
           </section>
+        )}
+
+        {/* ---- P/O Report Section ---- */}
+        {activeSidebar === "my-po" && (
+          <section className="card">
+            <h2>My Permission Out (P/O) Report</h2>
+              <div className="form" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end" }}>
+                <div class="form-group">
+                  <label>Date</label>
+                  <input type="date" value={poDate} onChange={(e) => setPoDate(e.target.value)} />
+                </div>
+                <div class="form-group">
+                   <label>Start Time</label>
+                <input type="time" value={poFrom} onChange={(e) => setPoFrom(e.target.value)} />
+                </div>
+                <div class="form-group">
+                   <label>End Time</label>
+                  <input type="time" value={poTo} onChange={(e) => setPoTo(e.target.value)} />
+                </div>
+                <div className="form-group">
+                <label>Reason</label>
+                <input
+                  type="text" placeholder="Reason"  value={poReason} onChange={(e) => setpoReason(e.target.value)}
+                />
+              </div>
+                {/* <button className="btn submit" onClick={addPoReport}>Add P/O</button> */}
+                <button  className="btn submit"  onClick={editingPo ? updatePoReport : addPoReport}>  {editingPo ? "Update P/O" : "Add P/O"}</button>
+              </div>
+
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Apply Date</th>
+                    <th>P/O Date</th>
+                    <th>From</th>
+                    <th>To</th>
+                    <th>Total</th>
+                    <th>Reason</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {poList.length === 0 ? (
+                    <tr>
+                      <td colSpan="7">No P/O records</td>
+                    </tr>
+                  ) : (
+                    poList.map((p) => (
+                      <tr key={p.id}>
+                        <td>{p.createdAt?.split("T")[0]}</td>
+                        <td>{p.date}</td>
+                        <td>{p.fromTime}</td>
+                        <td>{p.toTime}</td>
+                        <td>{p.totalTimeByHour}</td>
+                        <td>{p.POreason}</td>
+                        <td>{colorStatus(p.status || "pending")}</td>
+                        <td>
+                        <button
+                          className="btn small"
+                          disabled={p.status !== "pending"}
+                          style={{
+                            opacity: p.status !== "pending" ? 0.6 : 1,
+                            cursor: p.status !== "pending" ? "not-allowed" : "pointer",
+                            color: "#000",
+                          }}
+                          onClick={() => openEditPo(p)}
+                         
+                        >
+                          ✏ Edit
+                        </button>
+                      </td>
+                         
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </section>
+
         )}
 
 
@@ -6074,7 +6179,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           )}
 
 
-        {/* ---- Admin: All Staff P/O Reports ---- */}
+       {/* ---- Admin: All Staff P/O Reports ---- */}
         {isAdmin && activeSidebar === "admin-po" && (
           <section className="card">
             <h2>All Staff P/O Reports</h2>
@@ -6086,6 +6191,9 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                   <th>From</th>
                   <th>To</th>
                   <th>Total</th>
+                  <th>Reason</th>
+                   <th>Status</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -6101,12 +6209,41 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                       <td>{p.fromTime}</td>
                       <td>{p.toTime}</td>
                       <td>{p.totalTimeByHour}</td>
+                      <td>{p.POreason}</td>
+                      <td>{colorStatus(p.status || "pending")}</td>
+                      <td>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          {(p.status || "pending") === "pending" && (
+                            <>
+                              <button
+                                className="btn small"
+                                onClick={() => updatePoStatus(p.id, "approved")}
+                              >
+                                ✅
+                              </button>
+                              <button
+                                className="btn small red"
+                                onClick={() => updatePoStatus(p.id, "rejected")}
+                              >
+                                ❌
+                              </button>
+                            </>
+                          )}
+
+                          <button
+                            className="btn small"
+                            onClick={() => deletePoRequest(p.id)}
+                          >
+                             🗑️
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))
                 )}
               </tbody>
             </table>
-          </section>
+                      </section>
         )}
 
 
@@ -6194,8 +6331,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                       <td>{colorStatus(lv.status)}</td>
                       <td>
                         <div style={{ display: "flex", justifyContent: "start", gap: "2px" }}>
-                          {/* <button className="btn small" onClick={() => updateLeaveStatus(lv.id, "approved")}>✅</button>
-                          <button className="btn small red" onClick={() => updateLeaveStatus(lv.id, "rejected")}>❌</button> */}
+                          
                           <button className="btn small" onClick={() => adminUpdateLeaveStatus(lv.id, "approved", lv)}>✅</button>
                           <button className="btn small red" onClick={() => adminUpdateLeaveStatus(lv.id, "rejected", lv)}>❌</button>
 
