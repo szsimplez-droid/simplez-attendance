@@ -1856,7 +1856,8 @@ div.colheaders{
 
 @media (max-width: 1100px) {
   .dashboard-main-layout {
-    grid-template-columns: 1fr;
+    display: block;
+    width: 98%;
   }
 }
 
@@ -1872,6 +1873,14 @@ div.colheaders{
 
   .dashboard-header p {
     font-size: 16px;
+  }
+
+  .dashboard-left, .dashboard-right {
+    display: block;
+  }
+
+  .dashboard-panel {
+    margin-bottom: 30px;
   }
 
   .action-btn {
