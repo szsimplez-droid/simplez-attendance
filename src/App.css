@@ -1199,6 +1199,26 @@ input[type="checkbox"] {
 /* --------------------------
  SIDEBAR
 --------------------------- */
+/* .sidebar {
+  position: fixed;
+  top: 0;
+  left: -270px;
+  width: 250px;
+  height: 100%;
+  color: white;
+  padding: 20px;
+  transition: left 0.35s ease;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar.open {
+  left: 0;
+  animation: slideIn 0.35s ease;
+  top: 20px;
+} */
+
 .sidebar {
   position: fixed;
   top: 0;
@@ -1293,13 +1313,6 @@ input[type="checkbox"] {
 .hamburger.open span:nth-child(3) {
   top: 9px;
   transform: rotate(-45deg);
-}
-
-.hamburger,
-.hamburger span {
-  -webkit-tap-highlight-color: transparent;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
 }
 
   .form input[type="time"], .form input[type="date"] {
@@ -1597,7 +1610,7 @@ div.colheaders{
 .dashboard-date-card {
   background: #ffffff;
   border-radius: 16px;
-  padding: 14px 18px;
+  padding: 20px 18px;
   min-width: 180px;
   box-shadow: 0 6px 20px rgba(15, 23, 42, 0.08);
   border: 1px solid #e5e7eb;
@@ -1608,7 +1621,8 @@ div.colheaders{
 
 .dashboard-date-card span {
   font-size: 13px;
-  color: #64748b;
+  font-weight: 700;
+  color: #475569;
 }
 
 .dashboard-date-card strong {
@@ -1886,4 +1900,143 @@ div.colheaders{
     right: 40px;
   }
 
+}
+
+/* time zone display  */
+
+.custom-time-dropdown {
+  width: 180px;
+  background: #ffffff;
+  border: 1px solid #e6edf5;
+  border-radius: 18px;
+  padding: 14px 16px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+}
+
+.time-display-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: #475569;
+  margin-bottom: 10px;
+  letter-spacing: 0.2px;
+}
+
+.time-dropdown {
+  position: relative;
+}
+
+.time-dropdown-trigger {
+  width: 100%;
+  border: 1px solid #d9e5f2;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  border-radius: 16px;
+  min-height: 35px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+  cursor: pointer;
+  transition: all 0.22s ease;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+}
+
+.time-dropdown-trigger:hover {
+  border-color: #b8d8f4;
+  background: #ffffff;
+}
+
+.time-dropdown-trigger.open {
+  border-color: #56b6f7;
+  box-shadow: 0 0 0 3px rgba(86, 182, 247, 0.12);
+}
+
+.time-dropdown-chevron {
+  width: 25px;
+  height: 25px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.22s ease, background 0.22s ease, color 0.22s ease;
+  flex-shrink: 0;
+}
+
+.time-dropdown-chevron.open {
+  transform: rotate(180deg);
+  background: #e0f2fe;
+  color: #0284c7;
+}
+
+.time-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  width: 100%;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 8px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
+  z-index: 1200;
+  animation: timeDropdownFade 0.18s ease;
+}
+
+.time-dropdown-item {
+  width: 100%;
+  border: none;
+  background: transparent;
+  border-radius: 12px;
+  padding: 12px 14px;
+  text-align: left;
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.time-dropdown-item:hover {
+  background: #f1f7fd;
+  color: #0369a1;
+}
+
+.time-dropdown-item.active {
+  background: linear-gradient(90deg, #0ea5e9, #38bdf8);
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(14, 165, 233, 0.18);
+}
+
+@keyframes timeDropdownFade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 768px) {
+  .custom-time-dropdown {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 16px;
+  }
+
+  .time-dropdown-trigger {
+    min-height: 48px;
+    font-size: 15px;
+  }
+
+  .time-dropdown-item {
+    font-size: 14px;
+    padding: 11px 12px;
+  }
 }

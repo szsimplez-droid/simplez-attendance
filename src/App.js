@@ -93,6 +93,7 @@ export default function App() {
   const [roles, setRoles] = useState([]);
 
    const [clockLoading, setClockLoading] = useState(false);
+   const [showTimeDropdown, setShowTimeDropdown] = useState(false);
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -848,7 +849,7 @@ const loadLeaderAttendance = async (memberIds) => {
       : "-";
 
   // Returns today's date in YYYY-MM-DD format (Yangon time)
-  const getTodayDateYangon = () => {
+/*   const getTodayDateYangon = () => {
     const now = new Date(
       new Date().toLocaleString("en-US", { timeZone: "Asia/Yangon" })
     );
@@ -856,6 +857,79 @@ const loadLeaderAttendance = async (memberIds) => {
     const month = String(now.getMonth() + 1).padStart(2, "0");
     const day = String(now.getDate()).padStart(2, "0");
     return `${year}-${month}-${day}`;
+  }; */
+   const getTodayDateYangon = () => {
+    const now = new Date();
+  
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Yangon",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(now);
+  
+    const year = parts.find((p) => p.type === "year")?.value;
+    const month = parts.find((p) => p.type === "month")?.value;
+    const day = parts.find((p) => p.type === "day")?.value;
+  
+    return `${year}-${month}-${day}`;
+  };
+  const [timeViewMode, setTimeViewMode] = useState(() => {
+    return localStorage.getItem("timeViewMode") || "myanmar";
+  });
+  
+  useEffect(() => {
+    localStorage.setItem("timeViewMode", timeViewMode);
+  }, [timeViewMode]);
+  
+  const formatTimeByViewMode = (isoString, mode = timeViewMode) => {
+    if (!isoString) return "-";
+  
+    const date = new Date(isoString);
+  
+    let timeZone;
+    if (mode === "gmt") timeZone = "UTC";
+    else if (mode === "local") {
+      return date.toLocaleTimeString("en-GB", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+    } else {
+      timeZone = "Asia/Yangon";
+    }
+  
+    return date.toLocaleTimeString("en-GB", {
+      timeZone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  };
+  const getYangonMinutesFromISO = (isoString) => {
+    if (!isoString) return null;
+  
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Yangon",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(new Date(isoString));
+  
+    const hour = Number(parts.find((p) => p.type === "hour")?.value || 0);
+    const minute = Number(parts.find((p) => p.type === "minute")?.value || 0);
+  
+    return hour * 60 + minute;
+  };
+  
+  const isLateByYangonTime = (isoString) => {
+    const mins = getYangonMinutesFromISO(isoString);
+    return mins != null && mins > 8 * 60;
+  };
+  
+  const isEarlyOutByYangonTime = (isoString) => {
+    const mins = getYangonMinutesFromISO(isoString);
+    return mins != null && mins < 17 * 60;
   };
 
   // ---------------- New helper: Check distance to multiple locations ----------------
@@ -1937,15 +2011,17 @@ const checkLocationRange = async () => {
          return notify("⚠️ Already clocked in today.");
        }
    
-       await addDoc(collection(db, "attendance"), {
-         userId: user.uid,
-         date: today,
-         clockIn: new Date().toISOString(),
-         clockInTime: getMyanmarTimeString(),
-         locationName: locationResult.locationName || "",
-         locationIn: locationResult.locationData,
-         attendanceLocationMode: locationMode,
-       });
+       const now = new Date();
+       
+        await addDoc(collection(db, "attendance"), {
+          userId: user.uid,
+          date: today,
+          clockIn: now.toISOString(),
+          serverClockIn: serverTimestamp(),
+          locationName: locationResult.locationName || "",
+          locationIn: locationResult.locationData,
+          attendanceLocationMode: locationMode,
+        });
    
        successSound.play();
    
@@ -2012,15 +2088,16 @@ const checkLocationRange = async () => {
    
        const attDoc = snap.docs[0];
    
-       await updateDoc(doc(db, "attendance", attDoc.id), {
-         clockOut: new Date().toISOString(),
-         clockOutTime: getMyanmarTimeString(),
-         locationName:
-           locationResult.locationName || attDoc.data()?.locationName || "",
-         locationOut: locationResult.locationData,
-         attendanceLocationMode: locationMode,
-       });
-   
+       const now = new Date();
+       
+      await updateDoc(doc(db, "attendance", attDoc.id), {
+        clockOut: now.toISOString(),
+        serverClockOut: serverTimestamp(),
+        locationName:
+          locationResult.locationName || attDoc.data()?.locationName || "",
+        locationOut: locationResult.locationData,
+        attendanceLocationMode: locationMode,
+      });
        successSound.play();
    
        const successMsg = locationResult.locationName
@@ -2189,8 +2266,8 @@ const monthlySummaryByUser = Object.keys(usersMap || {})
     const rows = monthAttendance.filter((a) => a.userId === uid);
 
     const presentDays = rows.length;
-    const missingClockIn = rows.filter((r) => !r.clockInTime).length;
-    const missingClockOut = rows.filter((r) => !r.clockOutTime).length;
+    const missingClockIn = rows.filter((r) => !r.clockIn).length;
+    const missingClockOut = rows.filter((r) => !r.clockOut).length;
 
     return {
       uid,
@@ -2750,11 +2827,16 @@ const currentMonthStr = todayStr.slice(0, 7);
 const todayAttendance =
   attendance.find((a) => a.date === todayStr) || null;
 
-const todayClockIn = todayAttendance?.clockInTime || "--:--";
-const todayClockOut = todayAttendance?.clockOutTime || "--:--";
+const todayClockIn = todayAttendance?.clockIn
+  ? formatTimeByViewMode(todayAttendance.clockIn)
+  : (todayAttendance?.clockInTime || "--:--");
+
+const todayClockOut = todayAttendance?.clockOut
+  ? formatTimeByViewMode(todayAttendance.clockOut)
+  : (todayAttendance?.clockOutTime || "--:--");
 
 const attendanceStatus = todayAttendance
-  ? todayAttendance.clockOutTime
+  ? todayAttendance.clockOut
     ? "Checked Out"
     : "Checked In"
   : "Not Checked In";
@@ -2763,6 +2845,12 @@ const toMinutes = (timeStr) => {
   if (!timeStr || timeStr === "-") return null;
   const [h, m] = timeStr.split(":").map(Number);
   return h * 60 + m;
+};
+
+const getTimeViewLabel = (mode) => {
+  if (mode === "myanmar") return "Myanmar Time";
+  if (mode === "gmt") return "GMT / UTC";
+  return "My Local Time";
 };
 
 const isMorningHalfLeaveOnDate = (dateStr) => {
@@ -2794,7 +2882,7 @@ const monthPresentDays = monthAttendanceRows.length;
 const LATE_LIMIT = 8 * 60;       // 08:00
 const EARLY_OUT_LIMIT = 17 * 60; // 17:00
 
-const monthLateCount = monthAttendanceRows.filter((a) => {
+/* const monthLateCount = monthAttendanceRows.filter((a) => {
   if (isMorningHalfLeaveOnDate(a.date)) return false;
 
   const clockIn = toMinutes(a.clockInTime);
@@ -2810,6 +2898,16 @@ const monthEarlyOutCount = monthAttendanceRows.filter((a) => {
   if (clockOut == null) return false;
 
   return clockOut < EARLY_OUT_LIMIT;
+}).length; */
+
+const monthLateCount = monthAttendanceRows.filter((a) => {
+  if (isMorningHalfLeaveOnDate(a.date)) return false;
+  return isLateByYangonTime(a.clockIn);
+}).length;
+
+const monthEarlyOutCount = monthAttendanceRows.filter((a) => {
+  if (isEveningHalfLeaveOnDate(a.date)) return false;
+  return isEarlyOutByYangonTime(a.clockOut);
 }).length;
 
 const approvedLeavesThisMonth = leaves.filter((l) => {
@@ -3044,17 +3142,6 @@ const getGreeting = () => {
     if (isAdmin) loadAllOvertime();
   };
 
-  /* const updateLeaveStatus = async (id, status) => {
-    await updateDoc(doc(db, "leaves", id), { status });
-    notify(`Leave ${status}`);
-    loadAllLeaves();
-  };
-
-  const updateOvertimeStatus = async (id, status) => {
-    await updateDoc(doc(db, "overtimeRequests", id), { status });
-    notify(`Overtime ${status}`);
-    loadAllOvertime();
-  }; */
     const updateOvertimeStatus = async (id, status) => {
     await updateDoc(doc(db, "overtimeRequests", id), {
       status,
@@ -3064,15 +3151,6 @@ const getGreeting = () => {
     notify(`Overtime ${status}`);
     loadAllOvertime();
   };
-/* 
-  const leaderUpdateLeaveStatus = async (leaveDocId, status, memberUserId) => {
-  if (!leaderMembers.includes(memberUserId)) {
-    return notify("🚫 You cannot approve non-member leave.");
-  }
-  await updateLeaveStatus(leaveDocId, status);
-  // refresh leader list only
-  await loadLeaderLeaves(leaderMembers);
-}; */
 
 const leaderUpdateLeaveStatus = async (leaveDocId, decision, memberUserId) => {
   if (!leaderMembers.includes(memberUserId)) {
@@ -3696,7 +3774,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
       getUserName(a.userId),
       a.date,
       "Attendance",
-      `${a.clockIn ? toMyanmarTime(a.clockIn) : "-"} - ${a.clockOut ? toMyanmarTime(a.clockOut) : "-"}`
+      `${a.clockIn ? formatTimeByViewMode(a.clockIn) : "-"} - ${a.clockOut ? formatTimeByViewMode(a.clockOut) : "-"}`
     ]);
   });
 
@@ -4293,143 +4371,179 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         {/* My Panel (clock, save location, personal lists) */}
         {activeSidebar === "my-panel" && (
         <section className="dashboard-page">
-        <div className="dashboard-header">
-        <div>
-        <h1>My Dashboard</h1>
-        <p>  Hello {name || user?.email}, {getGreeting()}</p>
-        </div>
-
-        <div className="dashboard-date-card">
-        <span>Today</span>
-        <strong>{todayStr}</strong>
-        </div>
-        </div>
-
-    <div className="dashboard-main-layout">
-      <div className="dashboard-left">
-        <div className="dashboard-panel">
-          <div className="card-title-row">
-            <h3>My Daily Attendance</h3>
-          </div>
-
-          <div className="daily-attendance-box">
-            <div className="shift-label">
-              {todayAttendance?.locationName || "MAINSHIFT"}
+          <div className="dashboard-header">
+            <div>
+            <h1>My Dashboard</h1>
+            <p>  Hello {name || user?.email}, {getGreeting()}</p>
             </div>
 
-            <div className="daily-date">
-              {new Date(todayStr).toLocaleDateString("en-US", {
-                month: "long",
-                day: "numeric",
-                weekday: "long",
-              })}
-            </div>
-
-            <div className="today-status-grid two-cols">
-              <div className="mini-stat">
-                <span>Check In</span>
-                <strong>{todayClockIn}</strong>
-                <div className="mini-line green"></div>
+            <div className="dashboard-header">
+              <div className="dashboard-date-card">
+              <span>Today</span>
+              <strong>{todayStr}</strong>
               </div>
 
-              <div className="mini-stat">
-                <span>Check Out</span>
-                <strong>{todayClockOut}</strong>
-                <div className="mini-line blue"></div>
+              <div className="time-display-card custom-time-dropdown">
+                <label className="time-display-label">TimeZone Display</label>
+
+                <div className="time-dropdown">
+                  <button type="button" className={`time-dropdown-trigger ${showTimeDropdown ? "open" : ""}`} onClick={() => setShowTimeDropdown((prev) => !prev)}>
+                    <span>{getTimeViewLabel(timeViewMode)}</span>
+                    <span className={`time-dropdown-chevron ${showTimeDropdown ? "open" : ""}`}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none"  xmlns="http://www.w3.org/2000/svg">
+                        <path
+                          d="M6 9L12 15L18 9"
+                            stroke="currentColor"
+                          strokeWidth="2.2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </span>
+                  </button>
+
+                  {showTimeDropdown && (
+                    <div className="time-dropdown-menu">
+                      <button  type="button" className={`time-dropdown-item ${timeViewMode === "myanmar" ? "active" : ""}`}
+                        onClick={() => {setTimeViewMode("myanmar");setShowTimeDropdown(false);}}> Myanmar Time </button>
+
+                      <button type="button" className={`time-dropdown-item ${timeViewMode === "gmt" ? "active" : ""}`}
+                        onClick={() => {setTimeViewMode("gmt");setShowTimeDropdown(false);}}> GMT / UTC </button>
+
+                      <button type="button" className={`time-dropdown-item ${timeViewMode === "local" ? "active" : ""}`}
+                        onClick={() => {setTimeViewMode("local");setShowTimeDropdown(false);}}> My Local Time </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>        
+
+          <div className="dashboard-main-layout">
+            <div className="dashboard-left">
+              <div className="dashboard-panel">
+                <div className="card-title-row">
+                  <h3>My Daily Attendance</h3>
+                </div>
+
+                <div className="daily-attendance-box">
+                  <div className="shift-label">
+                    {todayAttendance?.locationName || "MAINSHIFT"}
+                  </div>
+
+                  <div className="daily-date">
+                    {new Date(todayStr).toLocaleDateString("en-US", {
+                      month: "long",
+                      day: "numeric",
+                      weekday: "long",
+                    })}
+                  </div>
+
+                  <div className="today-status-grid two-cols">
+                    <div className="mini-stat">
+                      <span>Check In</span>
+                      <strong>{todayClockIn}</strong>
+                      <div className="mini-line green"></div>
+                    </div>
+
+                    <div className="mini-stat">
+                      <span>Check Out</span>
+                      <strong>{todayClockOut}</strong>
+                      <div className="mini-line blue"></div>
+                    </div>
+                  </div>
+
+                  <div className="today-status-grid two-cols" style={{ marginTop: 14 }}>
+                    <div className="mini-stat">
+                      <span>Status</span>
+                      <strong>{attendanceStatus}</strong>
+                    </div>
+
+                    <div className="mini-stat">
+                      <span>Location</span>
+                      <strong>{todayAttendance?.locationName || "-"}</strong>
+                    </div>
+                  </div>
+
+                  <div className="dashboard-actions" style={{ marginTop: 20 }}>
+                    <button className="action-btn success" onClick={clockIn}>
+                      Clock In
+                    </button>
+                    <button className="action-btn danger" onClick={clockOut}>
+                      Clock Out
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="dashboard-panel">
+                <div className="card-title-row">
+                  <h3>My Leave History</h3>
+                </div>
+
+                <div className="leave-table-wrap">
+                  <table className="leave-history-table">
+                    <thead>
+                      <tr>
+                        <th>Leave Name</th>
+                        <th>Taken</th>
+                        <th>Balance</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {leaveSummaryRows.map((row) => (
+                        <tr key={row.leaveName}>
+                          <td>{row.leaveName}</td>
+                          <td>{row.taken}</td>
+                          <td>{row.balance}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
 
-            <div className="today-status-grid two-cols" style={{ marginTop: 14 }}>
-              <div className="mini-stat">
-                <span>Status</span>
-                <strong>{attendanceStatus}</strong>
+            <div className="dashboard-right">
+              <div className="dashboard-panel">
+                <div className="card-title-row">
+                  <h3>My Monthly Attendance</h3>
+                </div>
+
+                <div className="monthly-cards-grid">
+                  <div className="summary-card mint">
+                    <div className="summary-number">{monthPresentDays}</div>
+                    <div className="summary-label">Attendance</div>
+                  </div>
+
+                  <div className="summary-card pink">
+                    <div className="summary-number">{monthLeaveDays}</div>
+                    <div className="summary-label">Leave</div>
+                  </div>
+
+                  <div className="summary-card sand">
+                    <div className="summary-number">{monthLateCount}</div>
+                    <div className="summary-label">Late In</div>
+                  </div>
+
+                  <div className="summary-card sky">
+                    <div className="summary-number">{monthEarlyOutCount}</div>
+                    <div className="summary-label">Early Out</div>
+                  </div>
+                </div>
+
+                <div className="monthly-list">
+                  <div className="monthly-list-row">
+                    <span>This Month</span>
+                    <strong>{currentMonthStr}</strong>
+                  </div>
+                </div>
               </div>
-
-              <div className="mini-stat">
-                <span>Location</span>
-                <strong>{todayAttendance?.locationName || "-"}</strong>
-              </div>
-            </div>
-
-            <div className="dashboard-actions" style={{ marginTop: 20 }}>
-              <button className="action-btn success" onClick={clockIn}>
-                Clock In
-              </button>
-              <button className="action-btn danger" onClick={clockOut}>
-                Clock Out
-              </button>
             </div>
           </div>
-        </div>
-
-        <div className="dashboard-panel">
-          <div className="card-title-row">
-            <h3>My Leave History</h3>
-          </div>
-
-          <div className="leave-table-wrap">
-            <table className="leave-history-table">
-              <thead>
-                <tr>
-                  <th>Leave Name</th>
-                  <th>Taken</th>
-                  <th>Balance</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {leaveSummaryRows.map((row) => (
-                  <tr key={row.leaveName}>
-                    <td>{row.leaveName}</td>
-                    <td>{row.taken}</td>
-                    <td>{row.balance}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <div className="dashboard-right">
-        <div className="dashboard-panel">
-          <div className="card-title-row">
-            <h3>My Monthly Attendance</h3>
-          </div>
-
-          <div className="monthly-cards-grid">
-            <div className="summary-card mint">
-              <div className="summary-number">{monthPresentDays}</div>
-              <div className="summary-label">Attendance</div>
-            </div>
-
-            <div className="summary-card pink">
-              <div className="summary-number">{monthLeaveDays}</div>
-              <div className="summary-label">Leave</div>
-            </div>
-
-            <div className="summary-card sand">
-              <div className="summary-number">{monthLateCount}</div>
-              <div className="summary-label">Late In</div>
-            </div>
-
-            <div className="summary-card sky">
-              <div className="summary-number">{monthEarlyOutCount}</div>
-              <div className="summary-label">Early Out</div>
-            </div>
-          </div>
-
-          <div className="monthly-list">
-            <div className="monthly-list-row">
-              <span>This Month</span>
-              <strong>{currentMonthStr}</strong>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-)}
+        </section>
+      )}
 
 
         {/* My Attendance list */}
@@ -4443,8 +4557,8 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                   attendance.map((a) => (
                     <tr key={a.id}>
                       <td>{a.date}</td>
-                      <td>{toMyanmarTime(a.clockIn)}</td>
-                      <td>{toMyanmarTime(a.clockOut)}</td>
+                       <td>{a.clockIn ? formatTimeByViewMode(a.clockIn) : (a.clockInTime || "-")}</td>
+                      <td>{a.clockOut ? formatTimeByViewMode(a.clockOut) : (a.clockOutTime || "-")}</td>
                       <td>{a.locationIn ? <a target="_blank" rel="noreferrer" href={`https://maps.google.com/?q=${a.locationIn.latitude},${a.locationIn.longitude}`}>📍 View</a> : "-"}</td>
                       <td>{a.locationOut ? <a target="_blank" rel="noreferrer" href={`https://maps.google.com/?q=${a.locationOut.latitude},${a.locationOut.longitude}`}>📍 View</a> : "-"}</td>
                     </tr>
