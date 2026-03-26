@@ -94,6 +94,10 @@ export default function App() {
 
    const [clockLoading, setClockLoading] = useState(false);
    const [showTimeDropdown, setShowTimeDropdown] = useState(false);
+    const [myCalendarMonth, setMyCalendarMonth] = useState(() => {
+     const d = new Date();
+     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+   });
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -1021,7 +1025,8 @@ useEffect(() => {
   loadAttendance(user.uid);
   loadLeaves(user.uid);
   loadPoReports(user.uid);
-}, [user, activeSidebar]);
+  loadCompanyHolidaysForMonth(myCalendarMonth);
+}, [user, activeSidebar,myCalendarMonth]);
 
 useEffect(() => {
   if (!user || activeSidebar !== "my-po") return;
@@ -2882,6 +2887,26 @@ const monthPresentDays = monthAttendanceRows.length;
 const LATE_LIMIT = 8 * 60;       // 08:00
 const EARLY_OUT_LIMIT = 17 * 60; // 17:00
 
+/* Filter current user's attendance for that month */
+const myMonthAttendance = attendance.filter(
+  (a) => (a.date || "").startsWith(myCalendarMonth)
+);
+
+const myAttendanceMap = React.useMemo(() => {
+  const map = {};
+  myMonthAttendance.forEach((row) => {
+    map[row.date] = row;
+  });
+  return map;
+}, [myMonthAttendance]);
+
+/* Build calendar cells for selected month */
+const myCalendarCells = React.useMemo(
+  () => buildCalendarCells(myCalendarMonth),
+  [myCalendarMonth]
+);
+
+
 /* const monthLateCount = monthAttendanceRows.filter((a) => {
   if (isMorningHalfLeaveOnDate(a.date)) return false;
 
@@ -4438,7 +4463,16 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                       weekday: "long",
                     })}
                   </div>
-
+                  
+                  <div className="dashboard-actions">
+                    <button className="action-btn success" onClick={clockIn}>
+                      Clock In
+                    </button>
+                    <button className="action-btn danger" onClick={clockOut}>
+                      Clock Out
+                    </button>
+                  </div>
+                    
                   <div className="today-status-grid two-cols">
                     <div className="mini-stat">
                       <span>Check In</span>
@@ -4465,44 +4499,105 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                     </div>
                   </div>
 
-                  <div className="dashboard-actions" style={{ marginTop: 20 }}>
-                    <button className="action-btn success" onClick={clockIn}>
-                      Clock In
-                    </button>
-                    <button className="action-btn danger" onClick={clockOut}>
-                      Clock Out
-                    </button>
-                  </div>
+                  
                 </div>
               </div>
 
-              <div className="dashboard-panel">
-                <div className="card-title-row">
-                  <h3>My Leave History</h3>
+              <div className="dashboard-panel staff-calendar-panel">
+                <div className="staff-calendar-toolbar">
+                  <h3 className="staff-calendar-title">Monthly Attendance Calendar</h3>
+
+                  <input
+                    type="month"
+                    className="staff-calendar-month"
+                    value={myCalendarMonth}
+                    onChange={(e) => setMyCalendarMonth(e.target.value)}
+                  />
                 </div>
 
-                <div className="leave-table-wrap">
-                  <table className="leave-history-table">
-                    <thead>
-                      <tr>
-                        <th>Leave Name</th>
-                        <th>Taken</th>
-                        <th>Balance</th>
-                      </tr>
-                    </thead>
+                <div className="staff-calendar-grid">
+                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, i) => (
+                    <div
+                      key={day}
+                      className={`staff-calendar-weekday ${i === 0 || i === 6 ? "weekend" : ""}`}
+                    >
+                      {day}
+                    </div>
+                  ))}
 
-                    <tbody>
-                      {leaveSummaryRows.map((row) => (
-                        <tr key={row.leaveName}>
-                          <td>{row.leaveName}</td>
-                          <td>{row.taken}</td>
-                          <td>{row.balance}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  {myCalendarCells.map((dateStr, idx) => {
+                    if (!dateStr) {
+                      return (
+                        <div
+                          key={`blank-${idx}`}
+                          className="staff-calendar-day empty"
+                          aria-hidden="true"
+                        />
+                      );
+                    }
+
+                    const att = myAttendanceMap[dateStr];
+                    const holiday = holidayMap[dateStr];
+                    const dayIndex = new Date(`${dateStr}T00:00:00`).getDay();
+                    const isWeekend = dayIndex === 0 || dayIndex === 6;
+                    const todayYangon = getTodayDateYangon();
+
+                    return (
+                      <div
+                        key={dateStr}
+                        className={`staff-calendar-day
+                          ${isWeekend ? "weekend" : ""}
+                          ${holiday ? "holiday" : ""}
+                          ${dateStr === todayYangon ? "today" : ""}`}
+                      >
+                        <div className="staff-calendar-day-top">
+                          <span
+                            className={`staff-calendar-mobile-weekday ${
+                              isWeekend ? "weekend" : ""
+                            } ${holiday ? "holiday" : ""}`}
+                          >
+                            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dayIndex]}
+                          </span>
+                          <div className="row_flex">
+                          <span className="staff-calendar-date">
+                            {dateStr.slice(-2)}
+                          </span>
+
+                          {holiday && (
+                          <span className="staff-calendar-holiday-icon">
+                          🎌
+                          </span>
+                          )}
+                          </div>
+                        </div>
+
+                        
+
+                        <div className="staff-calendar-times">
+                          <div className="staff-calendar-row">
+                            <span className="label">In</span>
+                            <span className="value">
+                              {att?.clockIn
+                                ? formatTimeByViewMode(att.clockIn)
+                                : att?.clockInTime || "-"}
+                            </span>
+                          </div>
+
+                          <div className="staff-calendar-row">
+                            <span className="label">Out</span>
+                            <span className="value">
+                              {att?.clockOut
+                                ? formatTimeByViewMode(att.clockOut)
+                                : att?.clockOutTime || "-"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
+
             </div>
 
             <div className="dashboard-right">
@@ -4540,10 +4635,39 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                   </div>
                 </div>
               </div>
+
+              <div className="dashboard-panel">
+                <div className="card-title-row">
+                  <h3>My Leave History</h3>
+                </div>
+
+                <div className="leave-table-wrap">
+                  <table className="leave-history-table">
+                    <thead>
+                      <tr>
+                        <th>Leave Name</th>
+                        <th>Taken</th>
+                        <th>Balance</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {leaveSummaryRows.map((row) => (
+                        <tr key={row.leaveName}>
+                          <td>{row.leaveName}</td>
+                          <td>{row.taken}</td>
+                          <td>{row.balance}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+
             </div>
           </div>
         </section>
-        
       )}
 
 
@@ -6045,10 +6169,21 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                     </div>
                   )}
 
-                  <div style={{ marginTop: 8, fontSize: 13 }}>
-                    <div><b>IN:</b> {att?.clockInTime || "—"}</div>
-                    <div><b>OUT:</b> {att?.clockOutTime || "—"}</div>
-                  </div>
+                   <div style={{ marginTop: 8, fontSize: 13 }}>
+                       
+                        <div>
+                        <strong>In:</strong>{" "}
+                        {att?.clockIn
+                          ? formatTimeByViewMode(att.clockIn)
+                          : att?.clockInTime || "-"}
+                      </div>
+                      <div>
+                        <strong>Out:</strong>{" "}
+                        {att?.clockOut
+                          ? formatTimeByViewMode(att.clockOut)
+                          : att?.clockOutTime || "-"}
+                      </div>
+                      </div>
 
                   <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
                         <button
