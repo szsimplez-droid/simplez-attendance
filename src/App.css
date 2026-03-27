@@ -2250,14 +2250,14 @@ div.colheaders{
   }
 
   .staff-calendar-weekday {
-    min-width: 45px;
+    min-width: 38px;
     font-size: 12px;
-    min-height: 40px;
+    min-height: 35px;
   }
 
   .staff-calendar-day.compact {
-    min-width: 45px;
-    padding: 8px 6px;
+    min-width: 38px;
+    padding: 6px;
   }
 
   .staff-calendar-date.compact {
