@@ -1882,7 +1882,11 @@ div.colheaders{
 
   .dashboard-panel {
     margin-bottom: 30px;
-    padding: 12px;
+    padding: 20px 12px;
+  }
+
+  .card-title-row h3 {
+    font-size: 18px;
   }
 
   .action-btn {
@@ -2070,8 +2074,7 @@ div.colheaders{
 
 .staff-calendar-title {
   margin: 0;
-  font-size: 22px;
-  font-weight: 800;
+  font-size: 18px;
   color: #1f2937;
 }
 
