@@ -2829,6 +2829,10 @@ const leaderUpdateAttendanceTime = async () => {
 const todayStr = getTodayDateYangon();
 const currentMonthStr = todayStr.slice(0, 7);
 
+const [selectedCalendarDate, setSelectedCalendarDate] = useState(() =>
+  getTodayDateYangon()
+);
+
 const todayAttendance =
   attendance.find((a) => a.date === todayStr) || null;
 
@@ -2906,30 +2910,6 @@ const myCalendarCells = React.useMemo(
   [myCalendarMonth]
 );
 
-
-/* const monthLateCount = monthAttendanceRows.filter((a) => {
-  if (isMorningHalfLeaveOnDate(a.date)) return false;
-
-  const clockIn = toMinutes(a.clockInTime);
-  if (clockIn == null) return false;
-
-  return clockIn > LATE_LIMIT;
-}).length;
-
-const monthEarlyOutCount = monthAttendanceRows.filter((a) => {
-  if (isEveningHalfLeaveOnDate(a.date)) return false;
-
-  const clockOut = toMinutes(a.clockOutTime);
-  if (clockOut == null) return false;
-
-  return clockOut < EARLY_OUT_LIMIT;
-}).length; */
-
-const monthLateCount = monthAttendanceRows.filter((a) => {
-  if (isMorningHalfLeaveOnDate(a.date)) return false;
-  return isLateByYangonTime(a.clockIn);
-}).length;
-
 const monthEarlyOutCount = monthAttendanceRows.filter((a) => {
   if (isEveningHalfLeaveOnDate(a.date)) return false;
   return isEarlyOutByYangonTime(a.clockOut);
@@ -2993,6 +2973,76 @@ const getGreeting = () => {
   if (hour < 21) return "Good Evening";
   return "Good Night";
 };
+
+/* new montly calendar dashboard */
+
+useEffect(() => {
+  if (!selectedCalendarDate.startsWith(myCalendarMonth)) {
+    const firstRealDay = myCalendarCells.find(Boolean);
+    if (firstRealDay) setSelectedCalendarDate(firstRealDay);
+  }
+}, [myCalendarMonth, myCalendarCells, selectedCalendarDate]);
+
+
+const selectedDayAttendance = myAttendanceMap[selectedCalendarDate] || null;
+const selectedDayHoliday = holidayMap[selectedCalendarDate] || null;
+
+const selectedDayLeaves = leaves.filter((l) => {
+  if ((l.status || "").toLowerCase() !== "approved") return false;
+  return selectedCalendarDate >= l.startDate && selectedCalendarDate <= l.endDate;
+});
+
+const selectedDayWeekday = new Date(`${selectedCalendarDate}T00:00:00`).toLocaleDateString(
+  "en-US",
+  { weekday: "long", month: "long", day: "2-digit" }
+);
+
+const selectedDayIsLate =
+  selectedDayAttendance?.clockIn &&
+  !isMorningHalfLeaveOnDate(selectedCalendarDate)
+    ? isLateByYangonTime(selectedDayAttendance.clockIn)
+    : false;
+
+const selectedDayIsEarlyOut =
+  selectedDayAttendance?.clockOut &&
+  !isEveningHalfLeaveOnDate(selectedCalendarDate)
+    ? isEarlyOutByYangonTime(selectedDayAttendance.clockOut)
+    : false;
+
+const isAnyHalfLeaveOnDate = (dateStr) => {
+  return leaves.some((l) => {
+    if (String(l.status || "").toLowerCase() !== "approved") return false;
+    if (l.startDate !== dateStr || l.endDate !== dateStr) return false;
+
+    const t = String(l.leaveType || "").trim().toLowerCase();
+    return t.includes("half");
+  });
+};
+
+const monthLateCount = monthAttendanceRows.filter((a) => {
+  if (isAnyHalfLeaveOnDate(a.date)) return false;
+  return isLateByYangonTime(a.clockIn);
+}).length;
+
+const selectedDayIndex = new Date(`${selectedCalendarDate}T00:00:00`).getDay();
+const selectedDayIsWeekend = selectedDayIndex === 0 || selectedDayIndex === 6;
+const selectedDayIsHoliday = !!selectedDayHoliday;
+
+const selectedDayHasIn = !!selectedDayAttendance?.clockIn;
+const selectedDayHasOut = !!selectedDayAttendance?.clockOut;
+
+const selectedDayIsOffDay = selectedDayIsWeekend || selectedDayIsHoliday;
+
+const selectedDayIsAbsentHalf =
+  !selectedDayIsOffDay &&
+  selectedDayAttendance &&
+  (!selectedDayHasIn || !selectedDayHasOut) &&
+  !( !selectedDayHasIn && !selectedDayHasOut );
+
+const selectedDayIsAbsentFull =
+  !selectedDayIsOffDay &&
+  !selectedDayHasIn &&
+  !selectedDayHasOut;
 
  
    // ---------------- Admin: Save Two Locations ----------------
@@ -4515,7 +4565,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                   />
                 </div>
 
-                <div className="staff-calendar-grid">
+                <div className="staff-calendar-grid compact">
                   {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, i) => (
                     <div
                       key={day}
@@ -4530,73 +4580,195 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                       return (
                         <div
                           key={`blank-${idx}`}
-                          className="staff-calendar-day empty"
+                          className="staff-calendar-day compact empty"
                           aria-hidden="true"
                         />
                       );
                     }
 
-                    const att = myAttendanceMap[dateStr];
-                    const holiday = holidayMap[dateStr];
-                    const dayIndex = new Date(`${dateStr}T00:00:00`).getDay();
-                    const isWeekend = dayIndex === 0 || dayIndex === 6;
-                    const todayYangon = getTodayDateYangon();
+                  const att = myAttendanceMap[dateStr];
+                  const holiday = holidayMap[dateStr];
+                  const dayIndex = new Date(`${dateStr}T00:00:00`).getDay();
+                  const isWeekend = dayIndex === 0 || dayIndex === 6;
 
-                    return (
-                      <div
-                        key={dateStr}
-                        className={`staff-calendar-day
-                          ${isWeekend ? "weekend" : ""}
-                          ${holiday ? "holiday" : ""}
-                          ${dateStr === todayYangon ? "today" : ""}`}
-                      >
-                        <div className="staff-calendar-day-top">
-                          <span
-                            className={`staff-calendar-mobile-weekday ${
-                              isWeekend ? "weekend" : ""
-                            } ${holiday ? "holiday" : ""}`}
-                          >
-                            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dayIndex]}
-                          </span>
-                          <div className="row_flex">
-                          <span className="staff-calendar-date">
-                            {dateStr.slice(-2)}
-                          </span>
+                  const dayLeaves = leaves.filter((l) => {
+                    if ((l.status || "").toLowerCase() !== "approved") return false;
+                    return dateStr >= l.startDate && dateStr <= l.endDate;
+                  });
 
-                          {holiday && (
-                          <span className="staff-calendar-holiday-icon">
-                          🎌
-                          </span>
-                          )}
-                          </div>
-                        </div>
+                  const hasAttendance = att?.clockIn && att?.clockOut;
+                  const hasLeave = dayLeaves.length > 0;
+                  const isMorningHalf = isMorningHalfLeaveOnDate(dateStr);
+                  const isEveningHalf = isEveningHalfLeaveOnDate(dateStr);
 
-                        
+                  const leaveForDay = leaves.filter((l) => {
+                  if ((l.status || "").toLowerCase() !== "approved") return false;
+                  return dateStr >= l.startDate && dateStr <= l.endDate;
+                  });
 
-                        <div className="staff-calendar-times">
-                          <div className="staff-calendar-row">
-                            <span className="label">In</span>
-                            <span className="value">
-                              {att?.clockIn
-                                ? formatTimeByViewMode(att.clockIn)
-                                : att?.clockInTime || "-"}
-                            </span>
-                          </div>
+                  const hasFullLeave = leaveForDay.some((l) =>
+                  String(l.leaveType || "").toLowerCase().includes("full")
+                  );
 
-                          <div className="staff-calendar-row">
-                            <span className="label">Out</span>
-                            <span className="value">
-                              {att?.clockOut
-                                ? formatTimeByViewMode(att.clockOut)
-                                : att?.clockOutTime || "-"}
-                            </span>
-                          </div>
-                        </div>
+                  const hasHalfLeave = leaveForDay.some((l) =>
+                  String(l.leaveType || "").toLowerCase().includes("half")
+                  );
+
+                  const hasIn = !!att?.clockIn;
+                  const hasOut = !!att?.clockOut;
+
+                  let isAbsentHalf = false;
+                  let isAbsentFull = false;
+
+                  if (!holiday && !hasFullLeave) {
+                  if (!hasIn && !hasOut) {
+                  isAbsentFull = true;
+                  } else if (!hasIn || !hasOut) {
+                  if (!hasHalfLeave) {
+                  isAbsentHalf = true;
+                  }
+                  }
+                  }
+
+                // Late only if NOT morning half leave
+                  const isLate =
+                    att?.clockIn && !isMorningHalf
+                      ? isLateByYangonTime(att.clockIn)
+                      : false;
+
+                  // Early out only if NOT evening half leave (if you use later)
+                  const isEarlyOut =
+                    att?.clockOut && !isEveningHalf
+                      ? isEarlyOutByYangonTime(att.clockOut)
+                      : false;
+                  const isSelected = selectedCalendarDate === dateStr;
+
+                  return (
+                    <button
+                      key={dateStr}
+                      type="button"
+                      onClick={() => setSelectedCalendarDate(dateStr)}
+                      className={`staff-calendar-day compact
+                        ${isWeekend ? "weekend" : ""}
+                        ${holiday ? "holiday" : ""}
+                        ${isSelected ? "selected" : ""}`}
+                    >
+                      <div className="staff-calendar-mobile-weekday">
+                        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dayIndex]}
                       </div>
-                    );
+
+                      <div className="staff-calendar-date compact">
+                        {Number(dateStr.slice(-2))}
+                      </div>
+
+                      <div className="staff-calendar-dots">
+                        {hasAttendance && <span className="staff-dot attendance" />}
+                        {hasLeave && <span className="staff-dot leave" />}
+                        {isLate && <span className="staff-dot late" />}
+                        {holiday && <span className="staff-dot holiday" />}
+                        {isAbsentHalf && <span className="staff-dot absent-half" />}
+                        {isAbsentFull && <span className="staff-dot absent-full" />}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="staff-calendar-detail">
+                <h4 className="staff-calendar-detail-title">
+                  {new Date(`${selectedCalendarDate}T00:00:00`).toLocaleDateString("en-US", {
+                    weekday: "long",
+                    month: "long",
+                    day: "2-digit",
                   })}
+                </h4>
+
+                {selectedDayAttendance ? (
+                  <div className="staff-calendar-detail-item">
+                    <span className="staff-detail-dot attendance" />
+                    <div>
+                      <div className="staff-detail-label">Attendance</div>
+                      <div className="staff-detail-text">
+                        Check in at{" "}
+                        {selectedDayAttendance.clockIn
+                          ? formatTimeByViewMode(selectedDayAttendance.clockIn)
+                          : selectedDayAttendance.clockInTime || "-"}
+                        {" "} - Check out at{" "}
+                        {selectedDayAttendance.clockOut
+                          ? formatTimeByViewMode(selectedDayAttendance.clockOut)
+                          : selectedDayAttendance.clockOutTime || "-"}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {selectedDayLeaves.map((leaveRow) => (
+                  <div className="staff-calendar-detail-item" key={leaveRow.id}>
+                    <span className="staff-detail-dot leave" />
+                    <div>
+                      <div className="staff-detail-label">
+                        {leaveRow.leaveName} ({leaveRow.leaveType})
+                      </div>
+                      <div className="staff-detail-text">
+                        {leaveRow.startDate} - {leaveRow.endDate}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {selectedDayIsLate ? (
+                  <div className="staff-calendar-detail-item">
+                    <span className="staff-detail-dot late" />
+                    <div>
+                      <div className="staff-detail-label">Late</div>
+                      <div className="staff-detail-text">
+                        Clock in after 08:00 Myanmar time
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {selectedDayIsAbsentHalf && (
+                  <div className="staff-calendar-detail-item">
+                    <span className="staff-detail-dot absent-half" />
+                    <div>
+                      <div className="staff-detail-label">Incomplete Attendance</div>
+                      <div className="staff-detail-text">
+                        ⚠️ You forgot to clock { !selectedDayHasIn ? "in" : "out" }.
+                        This counts as a half-day absence.
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {selectedDayIsAbsentFull && (
+                  <div className="staff-calendar-detail-item">
+                    <span className="staff-detail-dot absent-full" />
+                    <div>
+                      <div className="staff-detail-label">Absent</div>
+                      <div className="staff-detail-text">
+                        No attendance record for this day.
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+              {selectedDayIsOffDay && (
+              <div className="staff-calendar-detail-item">
+                <span className="staff-detail-dot holiday" />
+                <div>
+                  <div className="staff-detail-label">Off Day</div>
+                  <div className="staff-detail-text">
+                    {selectedDayIsHoliday
+                      ? selectedDayHoliday?.name || "Company holiday"
+                      : "Weekend off day"}
+                  </div>
                 </div>
               </div>
+            )}
+                
+              </div>
+            </div>
 
             </div>
 
