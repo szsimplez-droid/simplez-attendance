@@ -129,6 +129,8 @@ export default function App() {
   const [editingEmp, setEditingEmp] = useState(null);
   const [editingLocationsEmpId, setEditingLocationsEmpId] = useState(null);
 
+  const [employeeStatusFilter, setEmployeeStatusFilter] = useState("active"); // "active" | "resigned" | "all"
+
   // attendance / lists
  /*  const [clockedIn, setClockedIn] = useState(false); */
   const [attendance, setAttendance] = useState([]);
@@ -341,11 +343,14 @@ export default function App() {
     address: "",
     contactAddress: "",
     maritalStatus: "",
+    employmentStatus: "active",
+    lastWorkingDay: "",
+    resignedDate: "",
   };
 
   const [employeeForm, setEmployeeForm] = useState(emptyEmployeeForm);
 
- const filteredEmployees = employees.filter((e) => {
+/*  const filteredEmployees = employees.filter((e) => {
   const q = empSearch.trim().toLowerCase();
   if (!q) return true;
 
@@ -363,6 +368,31 @@ export default function App() {
     .toLowerCase();
 
   return hay.includes(q);
+}); */
+
+const filteredEmployees = employees.filter((e) => {
+  const q = empSearch.trim().toLowerCase();
+
+  const matchSearch = !q || [
+    e.eid, e.employeeCode,
+    e.name, e.employeeName,
+    e.email,
+    e.department,
+    e.designation,
+    e.myanmarName,
+    e.phone,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+    .includes(q);
+
+  const status = e.employmentStatus || "active";
+  const matchStatus =
+    employeeStatusFilter === "all" ||
+    status === employeeStatusFilter;
+
+  return matchSearch && matchStatus;
 });
 
 const openEmployeeForEdit = (emp) => {
@@ -392,7 +422,9 @@ const openEmployeeForEdit = (emp) => {
     contactAddress: emp.contactAddress || "",
     maritalStatus: emp.maritalStatus || "",
     leaderId: emp.leaderId || "", 
-
+    employmentStatus: emp.employmentStatus || "active",
+    lastWorkingDay: emp.lastWorkingDay || "",
+    resignedDate: emp.resignedDate || "",
   });
 
   const leader = employees.find((x) => x.id === emp.leaderId);
@@ -565,6 +597,81 @@ const updateEmployee = async () => {
   }
 };
 
+const markEmployeeResigned = async () => {
+  try {
+    if (!selectedEmpId) return notify("Select employee first.");
+    if (!employeeForm.lastWorkingDay || !employeeForm.resignedDate) {
+      return notify("Please choose Last Working Day and Resigned Date.");
+    }
+
+    await updateDoc(doc(db, "users", selectedEmpId), {
+      employmentStatus: "resigned",
+      lastWorkingDay: employeeForm.lastWorkingDay,
+      resignedDate: employeeForm.resignedDate,
+      updatedAt: new Date().toISOString(),
+    });
+
+    notify("✅ Employee marked as resigned");
+    await loadEmployees();
+    await loadAllUsers();
+  } catch (err) {
+    console.error(err);
+    notify("❌ Resign failed: " + err.message);
+  }
+};
+
+const restoreEmployeeActive = async () => {
+  try {
+    if (!selectedEmpId) return notify("Select employee first.");
+
+    await updateDoc(doc(db, "users", selectedEmpId), {
+      employmentStatus: "active",
+      lastWorkingDay: "",
+      resignedDate: "",
+      updatedAt: new Date().toISOString(),
+    });
+
+    notify("✅ Employee restored");
+    await loadEmployees();
+    await loadAllUsers();
+  } catch (err) {
+    console.error(err);
+    notify("❌ Restore failed: " + err.message);
+  }
+};
+
+const isResignedUser = (uid) => {
+  const u = usersMap?.[uid];
+  return (u?.employmentStatus || "active") === "resigned";
+};
+
+const getLastWorkingDay = (uid) => {
+  return usersMap?.[uid]?.lastWorkingDay || "";
+};
+
+const shouldShowRecordForUser = (uid, recordDate) => {
+  const u = usersMap?.[uid];
+  if (!u) return false;
+
+  const status = u.employmentStatus || "active";
+  if (status !== "resigned") return true;
+
+  const lastDay = u.lastWorkingDay || "";
+  if (!lastDay) return false;
+
+  return (recordDate || "") <= lastDay;
+};
+
+const isResignedHistoricalRow = (uid, recordDate) => {
+  const u = usersMap?.[uid];
+  if (!u) return false;
+  if ((u.employmentStatus || "active") !== "resigned") return false;
+
+  const lastDay = u.lastWorkingDay || "";
+  if (!lastDay) return false;
+
+  return (recordDate || "") <= lastDay;
+};
 
 const createEmployeeSecondaryAuth = async () => {
   try {
@@ -1445,7 +1552,7 @@ const deletePayrollSummary = async (id) => {
   
   // Load all employees
   /*load emplyee order in eid */
-  const loadEmployees = async () => {
+/*   const loadEmployees = async () => {
   try {
     if (!auth.currentUser) return;
 
@@ -1459,9 +1566,28 @@ const deletePayrollSummary = async (id) => {
   } catch (err) {
     console.error("loadEmployees error:", err);
   }
+}; */
+
+const loadEmployees = async () => {
+  try {
+    if (!auth.currentUser) return;
+
+    const q = query(
+      collection(db, "users"),
+      orderBy("eid", "asc")
+    );
+
+    const snap = await getDocs(q);
+
+    const list = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((u) => (u.employmentStatus || "active") !== "inactive");
+
+    setEmployees(list);
+  } catch (err) {
+    console.error("loadEmployees error:", err);
+  }
 };
-
-
 
 
   // Delete employee
@@ -2237,6 +2363,7 @@ const checkLocationRange = async () => {
   const getEmpEmail = (uid) => getEmp(uid)?.email || "";
 
   const filteredAttendance = (allAttendance || [])
+  .filter((a) => shouldShowRecordForUser(a.userId, a.date))
   .filter((a) => {
     // month filter: a.date should be "YYYY-MM-DD"
     if (!attendanceMonth) return true;
@@ -2262,8 +2389,10 @@ const checkLocationRange = async () => {
   .sort((x, y) => (y.date || "").localeCompare(x.date || ""));
 
     /* Monthly attendance summary */
-    const monthAttendance = (allAttendance || []).filter((a) =>
-  (a.date || "").startsWith(attendanceMonth)
+   const monthAttendance = (allAttendance || []).filter(
+  (a) =>
+    (a.date || "").startsWith(attendanceMonth) &&
+    shouldShowRecordForUser(a.userId, a.date)
 );
 
 const monthlySummaryByUser = Object.keys(usersMap || {})
@@ -2643,6 +2772,7 @@ const filteredMemberOT = leaderOvertime.filter(row => {
 });
 
 const filteredAllMemberLeaves = allLeaves.filter((row) => {
+  if (!shouldShowRecordForUser(row.userId, row.startDate)) return false;
   const name = usersMap[row.userId]?.name;
   const matchName = safe(name).includes(safe(nameFilter));
 
@@ -2678,6 +2808,7 @@ useEffect(() => {
 
 
 const filteredAllMemberOT = allOvertime.filter((row) => {
+  if (!shouldShowRecordForUser(row.userId, row.startDate)) return false;
   const name = usersMap[row.userId]?.name;
   const matchName = safe(name).includes(safe(nameFilter));
 
@@ -5453,6 +5584,16 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
       <button className="btn" onClick={() => setEmpSearch("")}>Clear</button>
       <button className="btn blue" onClick={openCreateEmployeeModal}>+ New Employee</button>
 
+      <label>Employement Status</label>
+      <select
+      value={employeeStatusFilter}
+      onChange={(e) => setEmployeeStatusFilter(e.target.value)}
+      >
+      <option value="active">Active</option>
+      <option value="resigned">Resigned</option>
+      <option value="all">All</option>
+      </select>
+
     </div>
 
     {/* Employee list (click row to edit) */}
@@ -5652,8 +5793,10 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           <option value="Divorced">Divorced</option>
           <option value="Widowed">Widowed</option>
         </select>
+      
+      </div>
 
-         <div style={{ position: "relative" }}>
+      <div style={{ position: "relative",display:"flex",alignItems:"baseline" }}>
       <label style={{ marginBottom: "10px" }}>Type leader name... </label>
       <input
       placeholder="Type leader name..."
@@ -5719,7 +5862,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
   )}
 </div>
         
-        
+         <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         {/* ✅ Only show LOGIN EMAIL + TEMP PASSWORD when creating */}
         {!selectedEmpId && (
           <>
@@ -5752,7 +5895,24 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         )}
       </div>
 
-     
+     <div style={{borderTop: 2,borderWidth:"2px",borderTopStyle:"solid",fontSize:"16",paddingTop:"20px"}}>For Resignation management</div>
+      <div style={{ display: "flex", gap: 10, marginTop: 16, }} className="resign">
+        <div className="form-group">
+          <label>Last Working Day</label>
+          <input type="date" value={employeeForm.lastWorkingDay || ""} onChange={(e) => setEmployeeForm((prev) => ({ ...prev, lastWorkingDay: e.target.value }))}/>
+        </div>
+              
+        <div className="form-group">
+          <label>Resigned Date</label>
+          <input type="date" value={employeeForm.resignedDate || ""} onChange={(e) =>setEmployeeForm((prev) => ({ ...prev, resignedDate: e.target.value }))}/>
+        </div>
+        
+      </div>
+      
+      <div style={{ display: "flex", gap: 10, marginTop: 16,justifyContent:"center" }}>
+        <button className="btn red" type="button" onClick={markEmployeeResigned}>Mark Resigned</button>
+        <button className="btn green" type="button" onClick={restoreEmployeeActive}>Restore Active</button>
+      </div>
 
      <div style={{ display: "flex", gap: 10, marginTop: 16, justifyContent: "flex-end" }}>
         <button
@@ -6424,7 +6584,10 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
               <tbody>
                 {allAttendance.length===0 ? <tr><td colSpan="7">No attendance</td></tr> :
                   filteredAttendance.map((a) => (
-                    <tr key={a.id}>
+                    <tr key={a.id} style={{
+                      color: isResignedHistoricalRow(a.userId, a.date) ? "#dc2626" : "inherit",
+                      fontWeight: isResignedHistoricalRow(a.userId, a.date) ? 700 : 400,
+                    }}>
                       {/* <td>{usersMap[a.userId] || a.userId}</td> */}
                        <td style={{ fontWeight: 700 }}>{getEid(a.userId) || "-"}</td>
                        <td>{usersMap[a.userId]?.name || usersMap[a.userId]?.email || a.userId}</td>
@@ -6623,7 +6786,10 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                   <tr><td colSpan="5">No P/O records found.</td></tr>
                 ) : (
                   allPoList.map((p) => (
-                    <tr key={p.id}>
+                    <tr key={p.id} style={{
+                    color: isResignedHistoricalRow(p.userId, p.date) ? "#dc2626" : "inherit",
+                    fontWeight: isResignedHistoricalRow(p.userId, p.date) ? 700 : 400,
+                  }}>
                      {/*  <td>{usersMap[p.userId] || p.userId}</td> */}
                       <td>{displayUser(p.userId)}</td>
 
@@ -6739,7 +6905,10 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
               <tbody>
                 {filteredAllMemberLeaves.length===0 ? <tr><td colSpan="10">No leave requests</td></tr> :
                   filteredAllMemberLeaves.map((lv) => (
-                    <tr key={lv.id}>
+                    <tr key={lv.id} style={{
+                      color: isResignedHistoricalRow(lv.userId, lv.date) ? "#dc2626" : "inherit",
+                      fontWeight: isResignedHistoricalRow(lv.userId, lv.date) ? 700 : 400,
+                     }}>
                      {/*  <td>{usersMap[lv.userId] || lv.userId}</td> */}
                      <td>{displayUser(lv.userId)}</td>
                       <td>{lv.createdAt?.split("T")[0]}</td>
@@ -7138,7 +7307,10 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
               <tbody>
                 {filteredAllMemberOT.length===0 ? <tr><td colSpan="8">No OT requests</td></tr> :
                   filteredAllMemberOT.map((ot) => (
-                    <tr key={ot.id}>
+                    <tr key={ot.id} style={{
+                      color: isResignedHistoricalRow(ot.userId, ot.date) ? "#dc2626" : "inherit",
+                      fontWeight: isResignedHistoricalRow(ot.userId, ot.date) ? 700 : 400,
+                    }}>
                       {/* <td>{usersMap[ot.userId] || ot.userId}</td> */}
                       <td>{displayUser(ot.userId)}</td>
 
