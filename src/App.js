@@ -3125,7 +3125,7 @@ const selectedDayLeaves = leaves.filter((l) => {
 
 const selectedDayWeekday = new Date(`${selectedCalendarDate}T00:00:00`).toLocaleDateString(
   "en-US",
-  { weekday: "long", month: "long", day: "2-digit" }
+  { weekday: "long", month: "long", day: "2-digit", year:"numeric" }
 );
 
 const selectedDayIsLate =
@@ -4612,6 +4612,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                       month: "long",
                       day: "numeric",
                       weekday: "long",
+                      year:"numeric"
                     })}
                   </div>
                   </div>
