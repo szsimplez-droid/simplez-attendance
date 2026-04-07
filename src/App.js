@@ -4516,10 +4516,10 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
 
       {/* main content */}
       <main className={`main ${desktopSidebarCollapsed ? "expanded" : ""}`}>
-        <header className="main-header">
+       {/*  <header className="main-header">
           <h1>{activeSidebar.startsWith("admin") ? "Admin Dashboard" : "Employee Dashboard"}</h1>
           <div className="main-sub">{message}</div>
-        </header>
+        </header> */}
 
         <div className="header-right">
         <div className="noti-wrapper">
@@ -4584,12 +4584,39 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             </div>
 
             <div className="dashboard-header">
-              <div className="dashboard-date-card">
+              {/* <div className="dashboard-date-card">
               <span>Today</span>
               <strong>{todayStr}</strong>
               </div>
+ */}
+              
+            </div>
+          </div>        
 
-              <div className="time-display-card custom-time-dropdown">
+          <div className="dashboard-main-layout">
+            <div className="dashboard-left">
+              <div className="dashboard-panel">
+                <div className="card-title-row">
+                  <h3>My Daily Attendance</h3>
+                </div>
+
+                <div className="daily-attendance-box">
+                  <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "baseline", justifyContent: "space-between" }}>
+                  <div>
+                  <div className="shift-label">
+                    {todayAttendance?.locationName || "MAINSHIFT"}
+                  </div>
+
+                  <div className="daily-date">
+                    {new Date(todayStr).toLocaleDateString("en-US", {
+                      month: "long",
+                      day: "numeric",
+                      weekday: "long",
+                    })}
+                  </div>
+                  </div>
+
+                  <div className="time-display-card custom-time-dropdown">
                 <label className="time-display-label">TimeZone Display</label>
 
                 <div className="time-dropdown">
@@ -4622,28 +4649,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                   )}
                 </div>
               </div>
-            </div>
-          </div>        
-
-          <div className="dashboard-main-layout">
-            <div className="dashboard-left">
-              <div className="dashboard-panel">
-                <div className="card-title-row">
-                  <h3>My Daily Attendance</h3>
-                </div>
-
-                <div className="daily-attendance-box">
-                  <div className="shift-label">
-                    {todayAttendance?.locationName || "MAINSHIFT"}
-                  </div>
-
-                  <div className="daily-date">
-                    {new Date(todayStr).toLocaleDateString("en-US", {
-                      month: "long",
-                      day: "numeric",
-                      weekday: "long",
-                    })}
-                  </div>
+              </div>
                   
                   <div className="dashboard-actions">
                     <button className="action-btn success" onClick={clockIn}>
