@@ -2208,12 +2208,12 @@ div.colheaders{
 
 .staff-dot.late,
 .staff-detail-dot.late {
-  background: #ef4444;
+  background: #d222f1;
 }
 
 .staff-dot.holiday,
 .staff-detail-dot.holiday {
-  background: #f25abb;
+  background: #dc2626;
 }
 
 .staff-calendar-detail {
@@ -2317,7 +2317,7 @@ div.colheaders{
 }
 
 .staff-dot.absent-full {
-  background: #dc2626; /* strong red */
+  background: #f59e0b; /* strong red */
 }
 
 .staff-detail-dot.absent-half {

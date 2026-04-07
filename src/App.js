@@ -4728,6 +4728,8 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                   const holiday = holidayMap[dateStr];
                   const dayIndex = new Date(`${dateStr}T00:00:00`).getDay();
                   const isWeekend = dayIndex === 0 || dayIndex === 6;
+                   const today = new Date().toISOString().slice(0, 10);
+                  const isFuture = dateStr > today;
 
                   const dayLeaves = leaves.filter((l) => {
                     if ((l.status || "").toLowerCase() !== "approved") return false;
@@ -4758,7 +4760,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                   let isAbsentHalf = false;
                   let isAbsentFull = false;
 
-                  if (!holiday && !hasFullLeave) {
+                  /* if (!holiday && !hasFullLeave) {
                   if (!hasIn && !hasOut) {
                   isAbsentFull = true;
                   } else if (!hasIn || !hasOut) {
@@ -4766,6 +4768,16 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                   isAbsentHalf = true;
                   }
                   }
+                  } */
+                 // ❗ Only mark absent for working days (not weekend, not holiday, not future)
+                  if (!holiday && !isWeekend && !isFuture && !hasFullLeave) {
+                    if (!hasIn && !hasOut) {
+                      isAbsentFull = true;
+                    } else if (!hasIn || !hasOut) {
+                      if (!hasHalfLeave) {
+                        isAbsentHalf = true;
+                      }
+                    }
                   }
 
                 // Late only if NOT morning half leave
