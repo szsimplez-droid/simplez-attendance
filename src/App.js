@@ -4291,7 +4291,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
     markAllRead();
   }}
   >
-  🔔
+   <img src="/noti_bell.png" alt="Logout" className="noti-icon" />
   {unreadCount > 0 && (
   <span className="noti-badge">{unreadCount}</span>
   )}
@@ -4530,7 +4530,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           markAllRead();
         }}
         >
-        🔔
+         <img src="/noti_bell.png" alt="Logout" className="noti-icon" />
         {unreadCount > 0 && (
         <span className="noti-badge">{unreadCount}</span>
         )}
