@@ -2323,3 +2323,7 @@ div.colheaders{
 .staff-detail-dot.absent-half {
   background: #f59e0b; /* orange */
 }
+
+.staff-detail-dot.absent-full {
+  background: #f59e0b; /* orange */
+}
