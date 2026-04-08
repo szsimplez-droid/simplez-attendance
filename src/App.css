@@ -2153,7 +2153,8 @@ div.colheaders{
 }
 
 .staff-calendar-day.compact.weekend {
-  background: #fcfcff;
+   background: #fff5f5;
+   color:#b51f1f;
 }
 
 .staff-calendar-day.compact.holiday {

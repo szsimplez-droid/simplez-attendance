@@ -4818,6 +4818,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                         {holiday && <span className="staff-dot holiday" />}
                         {isAbsentHalf && <span className="staff-dot absent-half" />}
                         {isAbsentFull && <span className="staff-dot absent-full" />}
+                        {isWeekend && <span className="staff-dot holiday" />}
                       </div>
                     </button>
                   );
