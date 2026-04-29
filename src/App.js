@@ -136,6 +136,7 @@ export default function App() {
   const [attendance, setAttendance] = useState([]);
   const [allAttendance, setAllAttendance] = useState([]);
   const [leaves, setLeaves] = useState([]);
+  const [deptFilter, setDeptFilter] = useState("");
   const [allLeaves, setAllLeaves] = useState([]);
   const [overtimeReqs, setOvertimeReqs] = useState([]);
   const [allOvertime, setAllOvertime] = useState([]);
@@ -315,6 +316,20 @@ export default function App() {
      });
    }
  };
+
+ const openNotification = (n) => {
+  if (n.type === "payslip") {
+    setActiveSidebar("my-payslip");
+    window.history.pushState({}, "", "?tab=my-payslip");
+  }
+
+  if (n.type === "leave") {
+    setActiveSidebar("my-leave");
+    window.history.pushState({}, "", "?tab=my-leave");
+  }
+
+  setShowNoti(false);
+};
  
  // notifications end
 
@@ -520,6 +535,13 @@ const employeeById = React.useMemo(() => {
   return map;
 }, [employees]);
 
+  const departments = [
+  ...new Set(
+    Object.values(usersMap || {})
+      .map((u) => u.department)
+      .filter(Boolean)
+  ),
+];
 
 const createEmployee = async () => {
   try {
@@ -2690,11 +2712,10 @@ const [showRejectedOT, setShowRejectedOT] = useState(false);
 
 const resetFilters = () => {
   setNameFilter("");
+  setDeptFilter("");
   setDateFilter("");
   setFromDate("");
   setToDate("");
-
-  // reset status checkboxes
   setShowApprovedLeave(false);
   setShowRejectedLeave(false);
   setShowApprovedOT(false);
@@ -2775,6 +2796,8 @@ const filteredAllMemberLeaves = allLeaves.filter((row) => {
   if (!shouldShowRecordForUser(row.userId, row.startDate)) return false;
   const name = usersMap[row.userId]?.name;
   const matchName = safe(name).includes(safe(nameFilter));
+  const dept = usersMap[row.userId]?.department || "";
+  const matchDept = !deptFilter || dept === deptFilter;
 
   // ---------- Date range overlap ----------
   const rowStart = new Date(row.startDate);
@@ -2797,7 +2820,7 @@ const filteredAllMemberLeaves = allLeaves.filter((row) => {
 
   const matchStatus = allowed.has(s);
 
-  return matchName && matchStatus;
+  return matchName && matchDept && matchStatus;
 });
 
 useEffect(() => {
@@ -4554,7 +4577,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                   <p>No notifications</p>
                 ) : (
                   notifications.map((n) => (
-                    <div key={n.id} className="noti-item">
+                     <div key={n.id} className="noti-item" onClick={() => openNotification(n)} style={{ cursor: "pointer" }}>
                       <div className="noti-icon">
                         {n.type === "leave" && "A"}
                         {n.type === "payslip" && "ℹ️"}
@@ -5326,7 +5349,9 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           <table className="data-table payslip">
             <thead>
               <tr>
-                <th>Month</th>
+                <th>Date</th>
+                <th>Pay Month</th>
+                <th>Salary in Rate</th>
                 <th>Status</th>
                 <th>Action</th>
               </tr>
@@ -5337,7 +5362,9 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
               ) : (
                 myPayslips.map((ps) => (
                   <tr key={ps.id}>
-                    <td>{ps.paymonth}</td>
+                    <td>{ps.payrollData?.createdAt?.slice(0, 10) || ps.createdAt?.slice(0, 10) || "-"}</td>
+                    <td>For {ps.payrollData?.month || ps.paymonth || "-"}</td>
+                    <td>{ps.payrollData?.preferentialTotal?.toLocaleString() || "-"}</td>
                     <td>{ps.status}</td>
                     <td>
                       <button className="btn small green" onClick={() => exportPayslip(ps.payrollData)}>Export Payslip</button>
@@ -6867,6 +6894,17 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                 value={nameFilter}
                 onChange={(e) => setNameFilter(e.target.value)}
               />
+              <select
+                value={deptFilter}
+                onChange={(e) => setDeptFilter(e.target.value)}
+              >
+                <option value="">All Departments</option>
+                {departments.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
               <div className="flex-date">
                <label>Start Date</label>
                 <input
@@ -7526,58 +7564,58 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                 title: "Employee Info",
                 fields: [
                   ["Name", "name"],
-                  ["社員番号", "staffId"],
-                  ["語力", "languageLevel"],
-                  ["種別", "type"],
-                  ["役職", "staffposition"],
-                  ["チーム", "staffteam"]
+                  ["Staff Id", "staffId"],
+                  ["Language Level", "languageLevel"],
+                  ["Employement Type", "type"],
+                  ["Staff position", "staffposition"],
+                  ["Staff team", "staffteam"]
                 ]
               },
               {
                 title: "Attendance",
                 fields: [
-                  ["所定日数", "standardDays"],
-                  ["出勤日数", "workedDays"],
-                  ["実働時間", "actualHours"],
-                  ["有給日数", "annualLeave"],
-                  ["臨時休暇", "casualLeave"],
-                  ["欠勤日数", "absentDays"],
-                  ["休日出勤日数", "holidayWorkDays"],
-                  ["休日出勤時間", "holidayWorkHours"],
-                  ["残業時間", "overtimeHours"],
-                  ["遅刻時間", "lateHours"]
+                  ["Standard Days", "standardDays"],
+                  ["Working Days", "workedDays"],
+                  ["Actual Hours", "actualHours"],
+                  ["Annual Leave", "annualLeave"],
+                  ["Casual Leave", "casualLeave"],
+                  ["Absent Days", "absentDays"],
+                  ["Holiday Work Days", "holidayWorkDays"],
+                  ["Holiday Work Hours", "holidayWorkHours"],
+                  ["Overtime Hours", "overtimeHours"],
+                  ["Late Hours", "lateHours"]
                 ]
               },
               {
                 title: "Allowances / Earnings",
                 fields: [
-                  ["語力手当", "languageAllowance"],
-                  ["役職手当", "jobAllowance"],
-                  ["取締役手当", "directorAllowance"],
-                  ["基本給(最新)", "basicLatest"],
-                  ["固定残業", "fixedOvertime"],
-                  ["残業手当", "overtimeAllowance"],
-                  ["休日手当", "holidayAllowance"],
-                  ["在宅手当", "wfhAllowance"],
-                  ["賞与", "bonus"]
+                  ["Language Allowance", "languageAllowance"],
+                  ["Job Allowance", "jobAllowance"],
+                  ["Director Allowance", "directorAllowance"],
+                  ["Basic Latest", "basicLatest"],
+                  ["Fixed Overtime", "fixedOvertime"],
+                  ["Overtime Allowance", "overtimeAllowance"],
+                  ["Holiday Allowance", "holidayAllowance"],
+                  ["WFH Allowance", "wfhAllowance"],
+                  ["Bonus", "bonus"]
                 ]
               },
               {
                 title: "Deductions",
                 fields: [
-                  ["欠勤控除", "absenceDeduction"],
-                  ["遅刻控除", "lateDeduction"],
-                  ["固定残業控除", "fixedOvertimeDeduction"],
+                  ["Absence Deduction", "absenceDeduction"],
+                  ["Late Deduction", "lateDeduction"],
+                  ["FixedOvertime Deduction", "fixedOvertimeDeduction"],
                   ["SSB", "ssb"],
-                  ["所得税", "incomeTax"]
+                  ["Income Tax", "incomeTax"]
                 ]
               },
               {
                 title: "Payment Summary",
                 fields: [
-                  ["給与振込額", "salaryTransfer"],
-                  ["総支給額(優遇レート)", "preferentialTotal"],
-                  ["CBレート", "cbRate"],
+                  ["Salary Transfer", "salaryTransfer"],
+                  ["Salary in Rate", "preferentialTotal"],
+                  ["CB Rate", "cbRate"],
                   ["Date", "createdAt"],
                   ["Pay Month", "month"]
                 ]

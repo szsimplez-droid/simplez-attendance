@@ -471,7 +471,7 @@ justify-content: space-between;
   margin-bottom: 12px;
   width: 100%;
 }
- .staff_att_UI  input,.all_leave_req  input,.all_ot_req input {
+ .staff_att_UI  input,.all_ot_req input {
     width: 50%;
   }
 
@@ -486,10 +486,27 @@ justify-content: space-between;
     margin-bottom: 12px;
   }
 
+ .all_leave_req  input {
+    width: 20%;
+  }
+
+   .all_leave_req select {
+    width: 20%;
+    margin-left: 20px;
+   }
+
   .all_leave_req input[type="checkbox"],.all_ot_req input[type="checkbox"] {
     width: 20px;
     height: 20px;
 }
+
+  .all_leave_req input[type="date"] {
+    width: 55%;
+  }
+
+  .all_leave_req .flex-date {
+    width: 15%;
+  }
 
 .clock-btn {
   width: 300px;
