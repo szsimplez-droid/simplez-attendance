@@ -2,8 +2,6 @@ import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
-
-// 🔹 Paste your Firebase project config here:
 const firebaseConfig = {
   apiKey: "AIzaSyAQQg6k9TD2EatKcoqT5ZddPgjE-gdnphw",
   authDomain: "naychi-c41b9.firebaseapp.com",
@@ -14,7 +12,7 @@ const firebaseConfig = {
   measurementId: "G-4Z1K64BQ60"
 };
 
-// Initialize Firebase app first
+// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
 // Then initialize Firestore and Auth using the app instance
