@@ -26,6 +26,7 @@ import {
   setDoc,
 } from "firebase/firestore";
 
+
 import {
   signInWithEmailAndPassword,
   signOut,
@@ -35,8 +36,10 @@ import {
   browserLocalPersistence,
 } from "firebase/auth";
 
+
 import "./App.css";
 import PayrollCalculator from "./PayrollCalculator";
+
 
 // sounds (place files in /public folder)
 const clickSound = new Audio("/click.mp3");
@@ -53,7 +56,6 @@ function getDistanceInMeters(lat1, lon1, lat2, lon2) {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
-
 
 
 const notify = (text) => {
@@ -76,6 +78,7 @@ const getAttendanceLocationModeValue = (data = {}) => {
   return "required";
 };
 
+
 // secondary auth init (OUTSIDE App)
 const secondaryApp =
   getApps().find((a) => a.name === "secondary") ||
@@ -85,19 +88,19 @@ const secondaryAuth = getAuth(secondaryApp);
 
 /* ---------------- App ---------------- */
 export default function App() {
-   // Auth + role
+  // Auth + role
   const [authLoading, setAuthLoading] = useState(true);
 
   const [user, setUser] = useState(null);
   const [role, setRole] = useState("");
   const [roles, setRoles] = useState([]);
 
-   const [clockLoading, setClockLoading] = useState(false);
-   const [showTimeDropdown, setShowTimeDropdown] = useState(false);
-    const [myCalendarMonth, setMyCalendarMonth] = useState(() => {
-     const d = new Date();
-     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-   });
+  const [clockLoading, setClockLoading] = useState(false);
+  const [showTimeDropdown, setShowTimeDropdown] = useState(false);
+  const [myCalendarMonth, setMyCalendarMonth] = useState(() => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+});
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -123,16 +126,17 @@ export default function App() {
   const [message, setMessage] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeSidebar, setActiveSidebar] = useState("my-panel");
+
  
   // Employee management
   const [employees, setEmployees] = useState([]);
   const [editingEmp, setEditingEmp] = useState(null);
   const [editingLocationsEmpId, setEditingLocationsEmpId] = useState(null);
-
+  const [showLocationModal, setShowLocationModal] = useState(false);
+  const [locationEditEmp, setLocationEditEmp] = useState(null);
   const [employeeStatusFilter, setEmployeeStatusFilter] = useState("active"); // "active" | "resigned" | "all"
 
   // attendance / lists
- /*  const [clockedIn, setClockedIn] = useState(false); */
   const [attendance, setAttendance] = useState([]);
   const [allAttendance, setAllAttendance] = useState([]);
   const [leaves, setLeaves] = useState([]);
@@ -142,7 +146,37 @@ export default function App() {
   const [allOvertime, setAllOvertime] = useState([]);
   const [usersMap, setUsersMap] = useState({});
   const [selectedPayroll, setSelectedPayroll] = useState(null); 
-  
+
+  // attendance edit by leader
+const [editingLeaderAttendance, setEditingLeaderAttendance] = useState(null);
+const [leaderEditIn, setLeaderEditIn] = useState("");
+const [leaderEditOut, setLeaderEditOut] = useState("");
+
+const [nameFilter, setNameFilter] = useState("");
+const [dateFilter, setDateFilter] = useState("");
+const [fromDate, setFromDate] = useState("");
+const [toDate, setToDate] = useState("");
+
+const [attendanceNameFilter, setAttendanceNameFilter] = useState("");
+const [leaveNameFilter, setLeaveNameFilter] = useState("");
+const [leaveFromDate, setLeaveFromDate] = useState("");
+const [leaveToDate, setLeaveToDate] = useState("");
+const [otNameFilter, setOtNameFilter] = useState("");
+
+const [attendanceSearch, setAttendanceSearch] = useState("");
+const [attendanceMonth, setAttendanceMonth] = useState(() => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; // "YYYY-MM"
+});
+
+
+// Admin filters: show approved/rejected (pending is default)
+const [showApprovedLeave, setShowApprovedLeave] = useState(false);
+const [showRejectedLeave, setShowRejectedLeave] = useState(false);
+
+const [showApprovedOT, setShowApprovedOT] = useState(false);
+const [showRejectedOT, setShowRejectedOT] = useState(false);
+
   // P/O Report (Permission Out)
   const [poDate, setPoDate] = useState("");
   const [poFrom, setPoFrom] = useState("");
@@ -159,7 +193,6 @@ export default function App() {
   const [leaderOvertime, setLeaderOvertime] = useState([]);
   const [leaderAttendance, setLeaderAttendance] = useState([]);    // attendance records for leader's members
 
-
   const [allPayroll, setAllPayroll] = useState([]);
   const [allPayslips, setAllPayslips] = useState([]);
   const [allPoReports, setAllPoReports] = useState([]);
@@ -169,155 +202,155 @@ export default function App() {
   const [selectedEmpId, setSelectedEmpId] = useState(null);
 
   const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(false);
-  
+
   const [notifications, setNotifications] = useState([]);
   const [showNoti, setShowNoti] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
- const leaders = employees.filter(
-   (e) => (e.role === "leader") || (e.roles || []).includes("leader"));
- 
-   // open in new tab start
-   const handleTabClick = (e, tab) => {
-     if (
-       e.ctrlKey ||
-       e.metaKey ||
-       e.shiftKey ||
-       e.altKey ||
-       e.button !== 0
-     ) {
-       return;
-     }
- 
-     e.preventDefault();
-     setActiveSidebar(tab);
-     setSidebarOpen(false);
-     window.history.pushState({}, "", `?tab=${tab}`);
-   };
- 
-     //left menu Add open/close state
-     
- 
- const [openMenuGroup, setOpenMenuGroup] = useState("myMenu");
- 
-  const handleGroupClick = (key) => {
-   if (desktopSidebarCollapsed) {
-     setDesktopSidebarCollapsed(false);
-     setOpenMenuGroup(key);
-     return;
-   }
- 
-   setOpenMenuGroup(key);
- };
- 
-   useEffect(() => {
-   const syncTabFromUrl = () => {
-     const params = new URLSearchParams(window.location.search);
-     const tab = params.get("tab");
-     if (tab) setActiveSidebar(tab);
-   };
- 
-   syncTabFromUrl();
-   window.addEventListener("popstate", syncTabFromUrl);
- 
-   return () => window.removeEventListener("popstate", syncTabFromUrl);
- }, []);
- // open in new tab end
- 
- //still login start
- useEffect(() => {
-   const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
-     try {
-       if (!firebaseUser) {
-         setUser(null);
-         setRole("");
-         setRoles([]);
-         setName("");
-         setMessage("");
-         setAuthLoading(false);
-         return;
-       }
- 
-       setUser(firebaseUser);
- 
-       const uid = firebaseUser.uid;
-       const ud = await getDoc(doc(db, "users", uid));
- 
-       if (!ud.exists()) {
-         notify("User record not found in Firestore (users collection)");
-         setAuthLoading(false);
-         return;
-       }
- 
-       const data = ud.data();
- 
-       setRole(data.role || "");
-       const rolesArr = data.roles || (data.role ? [data.role] : []);
-       setRoles(rolesArr);
-       setName(data.name || "");
- 
-       setMessage(
-         <>
-           Welcome {data.name || firebaseUser.email}
-           {/* <br />
-           You are now logged in as {data.role} */}
-         </>
-       );
- 
-       if (data.location) setUserSavedLocation(data.location);
-     } catch (err) {
-       console.error("Auth restore error:", err);
-     } finally {
-       setAuthLoading(false);
-     }
-   });
- 
-   return () => unsub();
- }, []);
- 
- //still login end
- 
- 
- // notifications start
- useEffect(() => {
-   if (!user) return;
- 
-   const q = query(
-     collection(db, "notifications"),
-     where("userId", "==", user.uid)
-    
-   );
- 
-   const unsub = onSnapshot(
-     q,
-     (snap) => {
-       const list = snap.docs.map((d) => ({
-         id: d.id,
-         ...d.data(),
-       }));
- 
-       setNotifications(list);
-       setUnreadCount(list.filter((n) => !n.read).length);
-     },
-     (err) => {
-       console.error("Notification listener error:", err);
-     }
-   );
- 
-   return () => unsub();
- }, [user]);
- 
- const markAllRead = async () => {
-   const unread = notifications.filter((n) => !n.read);
- 
-   for (let n of unread) {
-     await updateDoc(doc(db, "notifications", n.id), {
-       read: true,
-     });
-   }
- };
+  const leaders = employees.filter(
+  (e) => (e.role === "leader") || (e.roles || []).includes("leader"));
 
- const openNotification = (n) => {
+  // open in new tab start
+  const handleTabClick = (e, tab) => {
+    if (
+      e.ctrlKey ||
+      e.metaKey ||
+      e.shiftKey ||
+      e.altKey ||
+      e.button !== 0
+    ) {
+      return;
+    }
+
+    e.preventDefault();
+    setActiveSidebar(tab);
+    setSidebarOpen(false);
+    window.history.pushState({}, "", `?tab=${tab}`);
+  };
+
+    //left menu Add open/close state
+    
+
+const [openMenuGroup, setOpenMenuGroup] = useState("myMenu");
+
+ const handleGroupClick = (key) => {
+  if (desktopSidebarCollapsed) {
+    setDesktopSidebarCollapsed(false);
+    setOpenMenuGroup(key);
+    return;
+  }
+
+  setOpenMenuGroup(key);
+};
+
+  useEffect(() => {
+  const syncTabFromUrl = () => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get("tab");
+    if (tab) setActiveSidebar(tab);
+  };
+
+  syncTabFromUrl();
+  window.addEventListener("popstate", syncTabFromUrl);
+
+  return () => window.removeEventListener("popstate", syncTabFromUrl);
+}, []);
+// open in new tab end
+
+//still login start
+useEffect(() => {
+  const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+    try {
+      if (!firebaseUser) {
+        setUser(null);
+        setRole("");
+        setRoles([]);
+        setName("");
+        setMessage("");
+        setAuthLoading(false);
+        return;
+      }
+
+      setUser(firebaseUser);
+
+      const uid = firebaseUser.uid;
+      const ud = await getDoc(doc(db, "users", uid));
+
+      if (!ud.exists()) {
+        notify("User record not found in Firestore (users collection)");
+        setAuthLoading(false);
+        return;
+      }
+
+      const data = ud.data();
+
+      setRole(data.role || "");
+      const rolesArr = data.roles || (data.role ? [data.role] : []);
+      setRoles(rolesArr);
+      setName(data.name || "");
+
+      setMessage(
+        <>
+          Welcome {data.name || firebaseUser.email}
+          {/* <br />
+          You are now logged in as {data.role} */}
+        </>
+      );
+
+      if (data.location) setUserSavedLocation(data.location);
+    } catch (err) {
+      console.error("Auth restore error:", err);
+    } finally {
+      setAuthLoading(false);
+    }
+  });
+
+  return () => unsub();
+}, []);
+
+//still login end
+
+
+// notifications start
+useEffect(() => {
+  if (!user) return;
+
+  const q = query(
+    collection(db, "notifications"),
+    where("userId", "==", user.uid)
+   
+  );
+
+  const unsub = onSnapshot(
+    q,
+    (snap) => {
+      const list = snap.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+      }));
+
+      setNotifications(list);
+      setUnreadCount(list.filter((n) => !n.read).length);
+    },
+    (err) => {
+      console.error("Notification listener error:", err);
+    }
+  );
+
+  return () => unsub();
+}, [user]);
+
+const markAllRead = async () => {
+  const unread = notifications.filter((n) => !n.read);
+
+  for (let n of unread) {
+    await updateDoc(doc(db, "notifications", n.id), {
+      read: true,
+    });
+  }
+};
+
+const openNotification = (n) => {
   if (n.type === "payslip") {
     setActiveSidebar("my-payslip");
     window.history.pushState({}, "", "?tab=my-payslip");
@@ -330,15 +363,15 @@ export default function App() {
 
   setShowNoti(false);
 };
- 
- // notifications end
 
+// notifications end
 
   const emptyEmployeeForm = {
     employeeCode: "",
     employeeName: "",
     myanmarName: "",
     gender: "",
+    languageLevel:"",
     department: "",
     designation: "",
     leaderId: "",
@@ -352,6 +385,8 @@ export default function App() {
     employmentType: "",
     probationPeriod: "",
     dob: "",
+    role: "staff",
+    roles: ["staff"],
     age: "",
     nrc: "",
     phone: "",
@@ -365,27 +400,7 @@ export default function App() {
 
   const [employeeForm, setEmployeeForm] = useState(emptyEmployeeForm);
 
-/*  const filteredEmployees = employees.filter((e) => {
-  const q = empSearch.trim().toLowerCase();
-  if (!q) return true;
-
-  const hay = [
-    e.eid, e.employeeCode,
-    e.name, e.employeeName,
-    e.email,
-    e.department,
-    e.designation,
-    e.myanmarName,
-    e.phone,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  return hay.includes(q);
-}); */
-
-const filteredEmployees = employees.filter((e) => {
+  const filteredEmployees = employees.filter((e) => {
   const q = empSearch.trim().toLowerCase();
 
   const matchSearch = !q || [
@@ -410,7 +425,7 @@ const filteredEmployees = employees.filter((e) => {
   return matchSearch && matchStatus;
 });
 
-const openEmployeeForEdit = (emp) => {
+  const openEmployeeForEdit = (emp) => {
   setSelectedEmpId(emp.id);
 
   setEmployeeForm({
@@ -418,6 +433,7 @@ const openEmployeeForEdit = (emp) => {
     employeeName: emp.employeeName || emp.name || "",
     myanmarName: emp.myanmarName || "",
     gender: emp.gender || "",
+    languageLevel:emp.languageLevel || "",
     department: emp.department || "",
     designation: emp.designation || "",
     rank: emp.rank || "",
@@ -430,6 +446,8 @@ const openEmployeeForEdit = (emp) => {
     employmentType: emp.employmentType || "",
     probationPeriod: emp.probationPeriod || "",
     dob: emp.dob || "",
+    role: emp.role || "staff",
+    roles: emp.roles || [emp.role || "staff"],
     age: emp.age || "",
     nrc: emp.nrc || "",
     phone: emp.phone || "",
@@ -445,37 +463,37 @@ const openEmployeeForEdit = (emp) => {
   const leader = employees.find((x) => x.id === emp.leaderId);
   setLeaderQueryInput(leader?.name || "");  // show leader name
   setShowLeaderDropdown(false);
-};
+  };
 
-const saveEmployeeProfile = async () => {
-  try {
-    if (!employeeForm.employeeCode || !employeeForm.employeeName) {
-      return notify("Employee Code and Employee Name are required.");
-    }
+  const saveEmployeeProfile = async () => {
+    try {
+      if (!employeeForm.employeeCode || !employeeForm.employeeName) {
+        return notify("Employee Code and Employee Name are required.");
+      }
 
-    const payload = {
-      // keep new HR fields
-      ...employeeForm,
+      const payload = {
+        // keep new HR fields
+        ...employeeForm,
 
-      // keep your old fields so other screens still work
-      eid: employeeForm.employeeCode,
-      name: employeeForm.employeeName,
+        // keep your old fields so other screens still work
+        eid: employeeForm.employeeCode,
+        name: employeeForm.employeeName,
 
-      updatedAt: new Date().toISOString(),
-    };
+        updatedAt: new Date().toISOString(),
+      };
 
-    if (selectedEmpId) {
-      // UPDATE existing
-      await updateDoc(doc(db, "users", selectedEmpId), payload);
-      notify("✅ Employee updated");
-    } else {
-      // CREATE new
-      await addDoc(collection(db, "users"), {
-        ...payload,
-        createdAt: new Date().toISOString(),
-      });
-      notify("✅ New employee created");
-    }
+      if (selectedEmpId) {
+        // UPDATE existing
+        await updateDoc(doc(db, "users", selectedEmpId), payload);
+        notify("✅ Employee updated");
+      } else {
+        // CREATE new
+        await addDoc(collection(db, "users"), {
+          ...payload,
+          createdAt: new Date().toISOString(),
+        });
+        notify("✅ New employee created");
+      }
 
     // refresh list + reset
     await loadEmployees();
@@ -485,55 +503,79 @@ const saveEmployeeProfile = async () => {
     console.error(err);
     notify("❌ Save failed: " + err.message);
   }
-};
+  };
 
-const startNewEmployee = () => {
-  setSelectedEmpId(null);
-  setEmployeeForm(emptyEmployeeForm);
-};
+  
+  const startNewEmployee = () => {
+    setSelectedEmpId(null);
+    setEmployeeForm(emptyEmployeeForm);
+  };
 
-const startCreateEmployee = () => {
-  setSelectedEmpId(null);
-  setEmployeeForm(emptyEmployeeForm);
+  const startCreateEmployee = () => {
+    setSelectedEmpId(null);
+    setEmployeeForm(emptyEmployeeForm);
 
-  // 🔴 clear auth fields
-  setLoginEmail("");
-  setTempPassword("");
-  setShowTempPw(false);
+    // 🔴 clear auth fields
+    setLoginEmail("");
+    setTempPassword("");
+    setShowTempPw(false);
 
-  // ✅ clear leader search fields
-  setLeaderQueryInput("");
-  setShowLeaderDropdown(false);
-};
+    // ✅ clear leader search fields
+    setLeaderQueryInput("");
+    setShowLeaderDropdown(false);
+  };
 
-useEffect(() => {
-  if (activeSidebar === "admin-employee-form") {
+  useEffect(() => {
+    if (activeSidebar === "admin-employee-form") {
+      startCreateEmployee();
+    }
+  }, [activeSidebar]);
+
+  const openCreateEmployeeModal = () => {
     startCreateEmployee();
-  }
-}, [activeSidebar]);
+    setShowEmpModal(true);
+  };
+  
+  const openEditEmployeeModal = (emp) => {
+    openEmployeeForEdit(emp);     // loads data into form + sets selectedEmpId
+    setShowEmpModal(true);
+  };
 
-const openCreateEmployeeModal = () => {
-  startCreateEmployee();
-  setShowEmpModal(true);
+  const openLocationModal = (emp) => {
+  const locations = emp.locations || [{}, {}];
+
+  setLocationEditEmp({
+    ...emp,
+    locations: [
+      {
+        name: locations[0]?.name || "",
+        latitude: locations[0]?.latitude || "",
+        longitude: locations[0]?.longitude || "",
+      },
+      {
+        name: locations[1]?.name || "",
+        latitude: locations[1]?.latitude || "",
+        longitude: locations[1]?.longitude || "",
+      },
+    ],
+  });
+
+  setShowLocationModal(true);
 };
-const openEditEmployeeModal = (emp) => {
-  openEmployeeForEdit(emp);     // loads data into form + sets selectedEmpId
-  setShowEmpModal(true);
-};
 
-useEffect(() => {
-  const t = setTimeout(() => {
-    setLeaderQuery(leaderQueryInput.trim());
-  }, 300); // ⏱ debounce time (ms)
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setLeaderQuery(leaderQueryInput.trim());
+    }, 300); // ⏱ debounce time (ms)
 
-  return () => clearTimeout(t);
-}, [leaderQueryInput]);
+    return () => clearTimeout(t);
+  }, [leaderQueryInput]);
 
-const employeeById = React.useMemo(() => {
-  const map = {};
-  employees.forEach((e) => (map[e.id] = e));
-  return map;
-}, [employees]);
+  const employeeById = React.useMemo(() => {
+    const map = {};
+    employees.forEach((e) => (map[e.id] = e));
+    return map;
+  }, [employees]);
 
   const departments = [
   ...new Set(
@@ -543,7 +585,7 @@ const employeeById = React.useMemo(() => {
   ),
 ];
 
-const createEmployee = async () => {
+  const createEmployee = async () => {
   try {
     if (!loginEmail || !tempPassword) {
       return notify("Login email and temporary password are required.");
@@ -592,34 +634,36 @@ const createEmployee = async () => {
     console.error(err);
     notify("❌ Create failed: " + (err?.message || "unknown error"));
   }
-};
+  };
 
-const updateEmployee = async () => {
-  try {
-    if (!selectedEmpId) return;
+  const updateEmployee = async () => {
+    try {
+      if (!selectedEmpId) return;
 
-    await updateDoc(doc(db, "users", selectedEmpId), {
-      ...employeeForm,
-      joinDate: employeeForm.doe || "",
-      doe: employeeForm.doe || "",
-      eid: employeeForm.employeeCode,
-      name: employeeForm.employeeName,
-      updatedAt: new Date().toISOString(),
-      updatedBy: auth.currentUser?.uid || null,
-      leaderId: employeeForm.leaderId || "",
-    });
+      await updateDoc(doc(db, "users", selectedEmpId), {
+        ...employeeForm,
+        joinDate: employeeForm.doe || "",
+        doe: employeeForm.doe || "",
+        role: employeeForm.role || "staff",
+        roles: employeeForm.roles || [employeeForm.role || "staff"],
+        eid: employeeForm.employeeCode,
+        name: employeeForm.employeeName,
+        updatedAt: new Date().toISOString(),
+        updatedBy: auth.currentUser?.uid || null,
+        leaderId: employeeForm.leaderId || "",
+      });
 
-    notify("✅ Employee updated");
-    setEmployeeForm(emptyEmployeeForm);
-    setSelectedEmpId(null);
-    loadEmployees();
-  } catch (err) {
-    console.error(err);
-    notify("❌ Update failed: " + (err?.message || "unknown error"));
-  }
-};
+      notify("✅ Employee updated");
+      setEmployeeForm(emptyEmployeeForm);
+      setSelectedEmpId(null);
+      loadEmployees();
+    } catch (err) {
+      console.error(err);
+      notify("❌ Update failed: " + (err?.message || "unknown error"));
+    }
+  };
 
-const markEmployeeResigned = async () => {
+  const markEmployeeResigned = async () => {
   try {
     if (!selectedEmpId) return notify("Select employee first.");
     if (!employeeForm.lastWorkingDay || !employeeForm.resignedDate) {
@@ -694,6 +738,7 @@ const isResignedHistoricalRow = (uid, recordDate) => {
 
   return (recordDate || "") <= lastDay;
 };
+
 
 const createEmployeeSecondaryAuth = async () => {
   try {
@@ -826,7 +871,7 @@ const createEmployeeSecondaryAuth = async () => {
   });
 
 
-const filteredGpsSettingEmployees = employees
+  const filteredGpsSettingEmployees = employees
   .filter((emp) => {
     const q = gpsSettingSearch.trim().toLowerCase();
     if (!q) return true;
@@ -851,7 +896,6 @@ const filteredGpsSettingEmployees = employees
     return eidA.localeCompare(eidB, undefined, { numeric: true });
   });
 
-
   const chunk = (arr, size) => {
   const out = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
@@ -866,6 +910,7 @@ const isHR = hasRole("hr");
 
 // payroll permission = ONLY admin
 const canAccessPayroll = isAdmin && !isHR;
+
 
 
 // load members under a leader (users where leaderId == leader uid)
@@ -938,11 +983,7 @@ const loadLeaderAttendance = async (memberIds) => {
   setLeaderAttendance(results);
 };
 
-
-
-
-
-  
+ 
   // Admin: remember each staff's selected leave type
   const [leaveSelections, setLeaveSelections] = useState(() => {
     // Load from localStorage when page opens
@@ -991,79 +1032,79 @@ const loadLeaderAttendance = async (memberIds) => {
     const day = String(now.getDate()).padStart(2, "0");
     return `${year}-${month}-${day}`;
   }; */
-   const getTodayDateYangon = () => {
-    const now = new Date();
-  
-    const parts = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Asia/Yangon",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).formatToParts(now);
-  
-    const year = parts.find((p) => p.type === "year")?.value;
-    const month = parts.find((p) => p.type === "month")?.value;
-    const day = parts.find((p) => p.type === "day")?.value;
-  
-    return `${year}-${month}-${day}`;
-  };
-  const [timeViewMode, setTimeViewMode] = useState(() => {
-    return localStorage.getItem("timeViewMode") || "myanmar";
-  });
-  
-  useEffect(() => {
-    localStorage.setItem("timeViewMode", timeViewMode);
-  }, [timeViewMode]);
-  
-  const formatTimeByViewMode = (isoString, mode = timeViewMode) => {
-    if (!isoString) return "-";
-  
-    const date = new Date(isoString);
-  
-    let timeZone;
-    if (mode === "gmt") timeZone = "UTC";
-    else if (mode === "local") {
-      return date.toLocaleTimeString("en-GB", {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      });
-    } else {
-      timeZone = "Asia/Yangon";
-    }
-  
+  const getTodayDateYangon = () => {
+  const now = new Date();
+
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Yangon",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+
+  const year = parts.find((p) => p.type === "year")?.value;
+  const month = parts.find((p) => p.type === "month")?.value;
+  const day = parts.find((p) => p.type === "day")?.value;
+
+  return `${year}-${month}-${day}`;
+};
+const [timeViewMode, setTimeViewMode] = useState(() => {
+  return localStorage.getItem("timeViewMode") || "myanmar";
+});
+
+useEffect(() => {
+  localStorage.setItem("timeViewMode", timeViewMode);
+}, [timeViewMode]);
+
+const formatTimeByViewMode = (isoString, mode = timeViewMode) => {
+  if (!isoString) return "-";
+
+  const date = new Date(isoString);
+
+  let timeZone;
+  if (mode === "gmt") timeZone = "UTC";
+  else if (mode === "local") {
     return date.toLocaleTimeString("en-GB", {
-      timeZone,
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,
     });
-  };
-  const getYangonMinutesFromISO = (isoString) => {
-    if (!isoString) return null;
-  
-    const parts = new Intl.DateTimeFormat("en-GB", {
-      timeZone: "Asia/Yangon",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).formatToParts(new Date(isoString));
-  
-    const hour = Number(parts.find((p) => p.type === "hour")?.value || 0);
-    const minute = Number(parts.find((p) => p.type === "minute")?.value || 0);
-  
-    return hour * 60 + minute;
-  };
-  
-  const isLateByYangonTime = (isoString) => {
-    const mins = getYangonMinutesFromISO(isoString);
-    return mins != null && mins > 8 * 60;
-  };
-  
-  const isEarlyOutByYangonTime = (isoString) => {
-    const mins = getYangonMinutesFromISO(isoString);
-    return mins != null && mins < 17 * 60;
-  };
+  } else {
+    timeZone = "Asia/Yangon";
+  }
+
+  return date.toLocaleTimeString("en-GB", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+};
+const getYangonMinutesFromISO = (isoString) => {
+  if (!isoString) return null;
+
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Yangon",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(isoString));
+
+  const hour = Number(parts.find((p) => p.type === "hour")?.value || 0);
+  const minute = Number(parts.find((p) => p.type === "minute")?.value || 0);
+
+  return hour * 60 + minute;
+};
+
+const isLateByYangonTime = (isoString) => {
+  const mins = getYangonMinutesFromISO(isoString);
+  return mins != null && mins > 8 * 60;
+};
+
+const isEarlyOutByYangonTime = (isoString) => {
+  const mins = getYangonMinutesFromISO(isoString);
+  return mins != null && mins < 17 * 60;
+};
 
   // ---------------- New helper: Check distance to multiple locations ----------------
   const isWithinRangeOfAny = (currentLat, currentLon, locations, range = 1000) => {
@@ -1170,7 +1211,7 @@ useEffect(() => {
     await loadAllUsers();
     await loadAllAttendance();
   })();
-}, [user, isAdmin, activeSidebar]);
+}, [user, isAdmin, activeSidebar,attendanceMonth]);
 
 useEffect(() => {
   if (!user || !isAdmin || activeSidebar !== "admin-att-overview") return;
@@ -1182,23 +1223,59 @@ useEffect(() => {
   })();
 }, [user, isAdmin, activeSidebar]);
 
-useEffect(() => {
+/* useEffect(() => {
   if (!user || !isAdmin || activeSidebar !== "admin-leave") return;
 
   (async () => {
     await loadAllUsers();
     await loadAllLeaves();
   })();
-}, [user, isAdmin, activeSidebar]);
+}, [user, isAdmin, activeSidebar]); */
 
 useEffect(() => {
+  if (!user || !isAdmin || activeSidebar !== "admin-leave") return;
+
+  (async () => {
+    if (Object.keys(usersMap || {}).length === 0) {
+      await loadAllUsers();
+    }
+
+    await loadAllLeaves();
+  })();
+}, [
+  user,
+  isAdmin,
+  activeSidebar,
+  showApprovedLeave,
+  showRejectedLeave,
+]);
+
+/* useEffect(() => {
   if (!user || !isAdmin || activeSidebar !== "admin-ot") return;
 
   (async () => {
     await loadAllUsers();
     await loadAllOvertime();
   })();
-}, [user, isAdmin, activeSidebar]);
+}, [user, isAdmin, activeSidebar]); */
+
+useEffect(() => {
+  if (!user || !isAdmin || activeSidebar !== "admin-ot") return;
+
+  (async () => {
+    if (Object.keys(usersMap || {}).length === 0) {
+      await loadAllUsers();
+    }
+
+    await loadAllOvertime();
+  })();
+}, [
+  user,
+  isAdmin,
+  activeSidebar,
+  showApprovedOT,
+  showRejectedOT,
+]);
 
 useEffect(() => {
   if (!user || !isAdmin || activeSidebar !== "admin-po") return;
@@ -1276,6 +1353,7 @@ useEffect(() => {
   })();
 }, [user, isAdmin, activeSidebar]);
 
+
   const handleLogout = async () => {
     await signOut(auth);
     setUser(null);
@@ -1307,6 +1385,7 @@ useEffect(() => {
     notify("❌ " + err.message);
   }
 };
+
 
 
 
@@ -1532,17 +1611,18 @@ useEffect(() => {
   //Sendpayslip admin
 
 const sendPayslip = async (p) => {
+  
   if (!p.userId) return notify("User ID missing");
 
   await addDoc(collection(db, "payslips"), {
-  userId: p.userId,
-  payrollData: p, // 🔑 store full payroll
-  paymonth: p.month,
-  status: "sent",
-  createdAt: new Date().toISOString()
-});
+    userId: p.userId,
+    payrollData: p,
+    paymonth: p.month,
+    status: "sent",
+    createdAt: new Date().toISOString()
+  });
 
-await addDoc(collection(db, "notifications"), {
+  await addDoc(collection(db, "notifications"), {
     userId: p.userId,
     type: "payslip",
     title: "Payslip Available",
@@ -1569,27 +1649,9 @@ const deletePayrollSummary = async (id) => {
   }
 };
 
-
   /* ---------------- data loaders ---------------- */
   
   // Load all employees
-  /*load emplyee order in eid */
-/*   const loadEmployees = async () => {
-  try {
-    if (!auth.currentUser) return;
-
-    const q = query(
-      collection(db, "users"),
-      orderBy("eid", "asc") // 👈 sort by employee ID
-    );
-
-    const snap = await getDocs(q);
-    setEmployees(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-  } catch (err) {
-    console.error("loadEmployees error:", err);
-  }
-}; */
-
 const loadEmployees = async () => {
   try {
     if (!auth.currentUser) return;
@@ -1675,11 +1737,6 @@ const loadEmployees = async () => {
     setUsersMap(map);
   };
 
-/*   const loadAllAttendance = async () => {
-    const snap = await getDocs(collection(db, "attendance"));
-    setAllAttendance(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-  }; */
-
   const loadAllAttendance = async () => {
   const snap = await getDocs(collection(db, "attendance"));
   const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -1687,258 +1744,300 @@ const loadEmployees = async () => {
   setAllAttendance(list);
 };
 
- const loadAllLeaves = async () => {
+/*  const loadAllLeaves = async () => {
     const snap = await getDocs(collection(db, "leaves"));
     const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    list.sort((a, b) => new Date(b.startDate) - new Date(a.startDate));// ✅ newest first
+    list.sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
     setAllLeaves(list);
   };
+ */
 
-  const loadAllOvertime = async () => {
+  const loadAllLeaves = async () => {
+  const statuses = ["pending", "leader_approved"];
+
+  if (showApprovedLeave) statuses.push("approved");
+  if (showRejectedLeave) statuses.push("rejected");
+
+  const q = query(
+    collection(db, "leaves"),
+    where("status", "in", statuses)
+  );
+
+  const snap = await getDocs(q);
+
+  const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+  list.sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
+
+  setAllLeaves(list);
+};
+
+/*   const loadAllOvertime = async () => {
     const snap = await getDocs(collection(db, "overtimeRequests"));
     const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     list.sort((a, b) => new Date(b.date) - new Date(a.date)); // ✅ newest first
     setAllOvertime(list);
-  };
+  }; */
+
+  const loadAllOvertime = async () => {
+  const statuses = ["pending"];
+
+  if (showApprovedOT) statuses.push("approved");
+  if (showRejectedOT) statuses.push("rejected");
+
+  const q = query(
+    collection(db, "overtimeRequests"),
+    where("status", "in", statuses)
+  );
+
+  const snap = await getDocs(q);
+  const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+  list.sort((a, b) => new Date(b.date) - new Date(a.date));
+  setAllOvertime(list);
+};
 
   // Add loaders for holidays (query by month range) 
-    const monthRange = (yyyyMm) => {
-    const [y, m] = yyyyMm.split("-").map(Number);
-    const first = new Date(y, m - 1, 1);
-    const last = new Date(y, m, 0);
-    const start = first.toISOString().slice(0, 10);
-    const end = last.toISOString().slice(0, 10);
-    return { start, end };
-    };
-  
-    // ---------- Company Calendar (Holidays) ----------
-  const [companyHolidays, setCompanyHolidays] = useState([]); // list of {id/date/name...}
-  const [holidayMonth, setHolidayMonth] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; // "YYYY-MM"
-  });
-  const [holidayDate, setHolidayDate] = useState(""); // "YYYY-MM-DD"
-  const [holidayName, setHolidayName] = useState("");
-  
-  
-  // Attendance Overview controls
-  const [overviewLeaveUserId, setOverviewLeaveUserId] = useState("");
-  const [overviewLeaveStart, setOverviewLeaveStart] = useState("");
-  const [overviewLeaveEnd, setOverviewLeaveEnd] = useState("");
-  const [overviewLeaveType, setOverviewLeaveType] = useState("Full Day");
-  const [overviewLeaveName, setOverviewLeaveName] = useState("Casual Leave");
-  const [overviewLeaveReason, setOverviewLeaveReason] = useState("");
+  const monthRange = (yyyyMm) => {
+  const [y, m] = yyyyMm.split("-").map(Number);
+  const first = new Date(y, m - 1, 1);
+  const last = new Date(y, m, 0);
+  const start = first.toISOString().slice(0, 10);
+  const end = last.toISOString().slice(0, 10);
+  return { start, end };
+  };
 
-  const [overviewMonth, setOverviewMonth] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-  });
-  const [overviewUserId, setOverviewUserId] = useState("");
-  
-  const adminCreateLeaveForStaff = async () => {
-    try {
-      if (
-        !overviewLeaveUserId ||
-        !overviewLeaveStart ||
-        !overviewLeaveEnd ||
-        !overviewLeaveReason
-      ) {
-        return notify("Please select staff, start date, end date and reason.");
-      }
-  
-      const now = new Date().toISOString();
-  
-      const newLeave = {
-        userId: overviewLeaveUserId,
-        startDate: overviewLeaveStart,
-        endDate: overviewLeaveEnd,
-        leaveType: overviewLeaveType,
-        leaveName: overviewLeaveName,
-        reason: overviewLeaveReason,
-      };
-  
-      const units = calcLeaveUnits(newLeave);
-      const year = new Date(overviewLeaveStart).getFullYear();
-  
-      await addDoc(collection(db, "leaves"), {
-        ...newLeave,
-  
-        status: "approved",
-        leaderStatus: "skipped_by_admin",
-        adminStatus: "approved",
-  
-        leaderActionBy: user.uid,
-        leaderActionAt: now,
-        adminActionBy: user.uid,
-        adminActionAt: now,
-  
-        // important for refund when deleting
-        balanceDeducted: true,
-        balanceDeductedAt: now,
-        balanceDeductedUnits: units,
-        balanceRefunded: false,
-        balanceRefundedAt: null,
-        balanceRefundedUnits: null,
-  
-        createdAt: now,
-        createdByAdmin: true,
-        createdBy: user.uid,
-      });
-  
-      const balRef = doc(db, "leaveBalances", `${overviewLeaveUserId}_${year}`);
-      const balSnap = await getDoc(balRef);
-  
-      const balData = balSnap.exists()
-        ? balSnap.data()
-        : { userId: overviewLeaveUserId, year, balances: {} };
-  
-      const balances = { ...(balData.balances || {}) };
-      const typeObj = { ...(balances[overviewLeaveName] || {}) };
-  
-      typeObj.taken = Number(typeObj.taken || 0) + Number(units);
-      balances[overviewLeaveName] = typeObj;
-  
-      await setDoc(
-        balRef,
-        {
-          userId: overviewLeaveUserId,
-          year,
-          balances,
-          updatedAt: now,
-        },
-        { merge: true }
-      );
-  
-      notify("✅ Leave added by admin");
-      setOverviewLeaveUserId("");
-      setOverviewLeaveStart("");
-      setOverviewLeaveEnd("");
-      setOverviewLeaveType("Full Day");
-      setOverviewLeaveName("Casual Leave");
-      setOverviewLeaveReason("");
-  
-      loadAllLeaves();
-      loadLeaveBalances(year);
-    } catch (err) {
-      console.error(err);
-      notify("❌ Cannot create leave: " + err.message);
+
+
+
+  // ---------- Company Calendar (Holidays) ----------
+const [companyHolidays, setCompanyHolidays] = useState([]); // list of {id/date/name...}
+const [holidayMonth, setHolidayMonth] = useState(() => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; // "YYYY-MM"
+});
+const [holidayDate, setHolidayDate] = useState(""); // "YYYY-MM-DD"
+const [holidayName, setHolidayName] = useState("");
+
+
+// Attendance Overview controls
+const [overviewLeaveUserId, setOverviewLeaveUserId] = useState("");
+const [overviewLeaveStart, setOverviewLeaveStart] = useState("");
+const [overviewLeaveEnd, setOverviewLeaveEnd] = useState("");
+const [overviewLeaveType, setOverviewLeaveType] = useState("Full Day");
+const [overviewLeaveName, setOverviewLeaveName] = useState("Casual Leave");
+const [overviewLeaveReason, setOverviewLeaveReason] = useState("");
+
+const [overviewMonth, setOverviewMonth] = useState(() => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+});
+const [overviewUserId, setOverviewUserId] = useState("");
+
+const adminCreateLeaveForStaff = async () => {
+  try {
+    if (
+      !overviewLeaveUserId ||
+      !overviewLeaveStart ||
+      !overviewLeaveEnd ||
+      !overviewLeaveReason
+    ) {
+      return notify("Please select staff, start date, end date and reason.");
     }
-  };
-  
-  const loadCompanyHolidaysForMonth = async (yyyyMm) => {
-      try {
-        const { start, end } = monthRange(yyyyMm);
-        const q = query(
-          collection(db, "companyCalendar"),
-          where("date", ">=", start),
-          where("date", "<=", end),
-          orderBy("date", "asc")
-        );
-        const snap = await getDocs(q);
-        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setCompanyHolidays(rows);
-      } catch (err) {
-        console.error(err);
-        notify("❌ Cannot load company holidays: " + err.message);
-      }
+
+    const now = new Date().toISOString();
+
+    const newLeave = {
+      userId: overviewLeaveUserId,
+      startDate: overviewLeaveStart,
+      endDate: overviewLeaveEnd,
+      leaveType: overviewLeaveType,
+      leaveName: overviewLeaveName,
+      reason: overviewLeaveReason,
     };
-  
-      useEffect(() => {
-      if (!isAdmin) return;
-      loadCompanyHolidaysForMonth(holidayMonth);
-    }, [isAdmin, holidayMonth]);
-  
-    useEffect(() => {
-      // Attendance Overview uses overviewMonth
-      if (!isAdmin) return;
-      loadCompanyHolidaysForMonth(overviewMonth);
-    }, [isAdmin, overviewMonth]);
-  
-    //Admin CRUD for Company Calendar
-   const adminAddOrUpdateHoliday = async () => {
-    try {
-      if (!holidayDate || !holidayName.trim()) {
-        notify("Please select date and enter holiday name.");
-        return;
-      }
-  
-      // ✅ must be ISO "YYYY-MM-DD"
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(holidayDate)) {
-        notify("❌ Holiday date must be YYYY-MM-DD (please use date picker).");
-        return;
-      }
-  
-      await setDoc(
-        doc(db, "companyCalendar", holidayDate),
-        {
-          date: holidayDate,
-          name: holidayName.trim(),
-          type: "holiday",
-          updatedAt: serverTimestamp(),
-          createdAt: serverTimestamp(),
-          createdBy: user?.uid || "",
-        },
-        { merge: true }
-      );
-  
-      notify("✅ Holiday saved");
-      setHolidayName("");
-      loadCompanyHolidaysForMonth(holidayMonth);
-    } catch (err) {
-      console.error(err);
-      notify("❌ Cannot save holiday: " + err.message);
-    }
-  };
-  
-  const adminDeleteHoliday = async (dateId) => {
-    try {
-      if (!window.confirm("Delete this holiday?")) return;
-      await deleteDoc(doc(db, "companyCalendar", dateId));
-      notify("🗑 Holiday deleted");
-      loadCompanyHolidaysForMonth(holidayMonth);
-    } catch (err) {
-      console.error(err);
-      notify("❌ Cannot delete holiday: " + err.message);
-    }
-  };
-  
-  // Calendar builder + Attendance Overview mapping (FIXED: no timezone shift)
-  const buildCalendarCells = (yyyyMm) => {
-    const [y, m] = yyyyMm.split("-").map(Number);
-    const first = new Date(y, m - 1, 1);
-    const last = new Date(y, m, 0);
-  
-    const startWeekday = first.getDay(); // 0 Sun .. 6 Sat
-    const totalDays = last.getDate();
-  
-    const pad2 = (n) => String(n).padStart(2, "0");
-    const toLocalDateStr = (d) =>
-      `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-  
-    const cells = [];
-  
-    for (let i = 0; i < startWeekday; i++) cells.push(null);
-  
-    for (let day = 1; day <= totalDays; day++) {
-      const dd = new Date(y, m - 1, day);
-      cells.push(toLocalDateStr(dd));
-    }
-  
-    return cells;
-  };
-  
-  const holidayMap = React.useMemo(() => {
-    const m = {};
-    (companyHolidays || []).forEach((h) => {
-      if (h?.date) m[h.date] = h;
+
+    const units = calcLeaveUnits(newLeave);
+    const year = new Date(overviewLeaveStart).getFullYear();
+
+    await addDoc(collection(db, "leaves"), {
+      ...newLeave,
+
+      status: "approved",
+      leaderStatus: "skipped_by_admin",
+      adminStatus: "approved",
+
+      leaderActionBy: user.uid,
+      leaderActionAt: now,
+      adminActionBy: user.uid,
+      adminActionAt: now,
+
+      // important for refund when deleting
+      balanceDeducted: true,
+      balanceDeductedAt: now,
+      balanceDeductedUnits: units,
+      balanceRefunded: false,
+      balanceRefundedAt: null,
+      balanceRefundedUnits: null,
+
+      createdAt: now,
+      createdByAdmin: true,
+      createdBy: user.uid,
     });
-    return m;
-  }, [companyHolidays]);
-  
-  const findAttendanceByUserAndDate = (uid, dateStr) => {
-    if (!uid || !dateStr) return null;
-    return (allAttendance || []).find((a) => a.userId === uid && a.date === dateStr) || null;
+
+    const balRef = doc(db, "leaveBalances", `${overviewLeaveUserId}_${year}`);
+    const balSnap = await getDoc(balRef);
+
+    const balData = balSnap.exists()
+      ? balSnap.data()
+      : { userId: overviewLeaveUserId, year, balances: {} };
+
+    const balances = { ...(balData.balances || {}) };
+    const typeObj = { ...(balances[overviewLeaveName] || {}) };
+
+    typeObj.taken = Number(typeObj.taken || 0) + Number(units);
+    balances[overviewLeaveName] = typeObj;
+
+    await setDoc(
+      balRef,
+      {
+        userId: overviewLeaveUserId,
+        year,
+        balances,
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+
+    notify("✅ Leave added by admin");
+    setOverviewLeaveUserId("");
+    setOverviewLeaveStart("");
+    setOverviewLeaveEnd("");
+    setOverviewLeaveType("Full Day");
+    setOverviewLeaveName("Casual Leave");
+    setOverviewLeaveReason("");
+
+    loadAllLeaves();
+    loadLeaveBalances(year);
+  } catch (err) {
+    console.error(err);
+    notify("❌ Cannot create leave: " + err.message);
+  }
+};
+
+
+  const loadCompanyHolidaysForMonth = async (yyyyMm) => {
+    try {
+      const { start, end } = monthRange(yyyyMm);
+      const q = query(
+        collection(db, "companyCalendar"),
+        where("date", ">=", start),
+        where("date", "<=", end),
+        orderBy("date", "asc")
+      );
+      const snap = await getDocs(q);
+      const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setCompanyHolidays(rows);
+    } catch (err) {
+      console.error(err);
+      notify("❌ Cannot load company holidays: " + err.message);
+    }
   };
+
+    useEffect(() => {
+    if (!isAdmin) return;
+    loadCompanyHolidaysForMonth(holidayMonth);
+  }, [isAdmin, holidayMonth]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    loadCompanyHolidaysForMonth(overviewMonth);
+  }, [isAdmin, overviewMonth]);
+
+  //Admin CRUD for Company Calendar
+ const adminAddOrUpdateHoliday = async () => {
+  try {
+    if (!holidayDate || !holidayName.trim()) {
+      notify("Please select date and enter holiday name.");
+      return;
+    }
+
+    // ✅ must be ISO "YYYY-MM-DD"
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(holidayDate)) {
+      notify("❌ Holiday date must be YYYY-MM-DD (please use date picker).");
+      return;
+    }
+
+    await setDoc(
+      doc(db, "companyCalendar", holidayDate),
+      {
+        date: holidayDate,
+        name: holidayName.trim(),
+        type: "holiday",
+        updatedAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+        createdBy: user?.uid || "",
+      },
+      { merge: true }
+    );
+
+    notify("✅ Holiday saved");
+    setHolidayName("");
+    loadCompanyHolidaysForMonth(holidayMonth);
+  } catch (err) {
+    console.error(err);
+    notify("❌ Cannot save holiday: " + err.message);
+  }
+};
+
+const adminDeleteHoliday = async (dateId) => {
+  try {
+    if (!window.confirm("Delete this holiday?")) return;
+    await deleteDoc(doc(db, "companyCalendar", dateId));
+    notify("🗑 Holiday deleted");
+    loadCompanyHolidaysForMonth(holidayMonth);
+  } catch (err) {
+    console.error(err);
+    notify("❌ Cannot delete holiday: " + err.message);
+  }
+};
+
+// Calendar builder + Attendance Overview mapping (FIXED: no timezone shift)
+  const buildCalendarCells = (yyyyMm) => {
+  const [y, m] = yyyyMm.split("-").map(Number);
+  const first = new Date(y, m - 1, 1);
+  const last = new Date(y, m, 0);
+
+  const startWeekday = first.getDay(); // 0 Sun .. 6 Sat
+  const totalDays = last.getDate();
+
+  const pad2 = (n) => String(n).padStart(2, "0");
+  const toLocalDateStr = (d) =>
+    `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+  const cells = [];
+
+  for (let i = 0; i < startWeekday; i++) cells.push(null);
+
+  for (let day = 1; day <= totalDays; day++) {
+    const dd = new Date(y, m - 1, day);
+    cells.push(toLocalDateStr(dd));
+  }
+
+  return cells;
+};
+
+const holidayMap = React.useMemo(() => {
+  const m = {};
+  (companyHolidays || []).forEach((h) => {
+    if (h?.date) m[h.date] = h;
+  });
+  return m;
+}, [companyHolidays]);
+
+const findAttendanceByUserAndDate = (uid, dateStr) => {
+  if (!uid || !dateStr) return null;
+  return (allAttendance || []).find((a) => a.userId === uid && a.date === dateStr) || null;
+};
 
   // Calculate duration in hours and minutes
   const calcPoDuration = (from, to) => {
@@ -2028,7 +2127,6 @@ const loadPoReports = async (uid) => {
     setPoList(list);
 };
 
-
 // Load all P/O reports (for admin)
 const loadAllPoReports = async () => {
   const snap = await getDocs(collection(db, "poReports"));
@@ -2065,6 +2163,8 @@ const deletePoRequest = async (id) => {
     notify("❌ Delete failed: " + err.message);
   }
 };
+
+
 
 
 /* ---------------- geo-fence checking (safe) ---------------- */
@@ -2114,7 +2214,8 @@ const checkLocationRange = async () => {
     if (user && (role === "staff" || isAdmin)) {
 
       checkLocationRange();
-      const id = setInterval(checkLocationRange, 60000); // every 60s
+     /*  const id = setInterval(checkLocationRange, 60000); */ // every 60s
+     const id = setInterval(checkLocationRange, 5 * 60 * 1000); //5–10 minutes
       return () => clearInterval(id);
     }
     // if admin logged and viewing personal panel, we still allow manual checks via saveMyLocation and click
@@ -2123,154 +2224,154 @@ const checkLocationRange = async () => {
 
   /* ---------------- clock in / out (100m rule enforced) ---------------- */
  // ---------------- Clock In / Out ----------------
-   const clockIn = async () => {
-     if (!user) return notify("Login required");
-   
-     if (clockLoading) return; // prevent double click
-   
-     setClockLoading(true);
-     clickSound.play();
-     notify("⏳ Recording Clock In...");
-   
-     try {
-   
-       const ud = await getDoc(doc(db, "users", user.uid));
-       const userData = ud.exists() ? ud.data() : {};
-   
-       const locationMode = getAttendanceLocationModeValue(userData);
-       const locationResult = await getAttendanceLocationPayload(
-         userData,
-         locationMode,
-         "clock in"
-       );
-   
-       if (!locationResult.allowed) {
-         setClockLoading(false);
-         return notify(locationResult.message);
-       }
-   
-       const today = getTodayDateYangon();
-   
-       const q = query(
-         collection(db, "attendance"),
-         where("userId", "==", user.uid),
-         where("date", "==", today)
-       );
-   
-       const snap = await getDocs(q);
-   
-       if (!snap.empty) {
-         setClockLoading(false);
-         return notify("⚠️ Already clocked in today.");
-       }
-   
-       const now = new Date();
-       
-        await addDoc(collection(db, "attendance"), {
-          userId: user.uid,
-          date: today,
-          clockIn: now.toISOString(),
-          serverClockIn: serverTimestamp(),
-          locationName: locationResult.locationName || "",
-          locationIn: locationResult.locationData,
-          attendanceLocationMode: locationMode,
-        });
-   
-       successSound.play();
-   
-       const successMsg = locationResult.locationName
-         ? `✅ Clock In recorded at ${locationResult.locationName}`
-         : locationMode === "disabled"
-         ? "✅ Clock In recorded without GPS."
-         : "✅ Clock In recorded. GPS was skipped.";
-   
-       notify(successMsg);
-   
-       loadAttendance(user.uid);
-       if (isAdmin) loadAllAttendance();
-   
-     } catch (err) {
-       console.error(err);
-       notify("❌ Clock In failed: " + err.message);
-     }
-   
-     setClockLoading(false);
-   };
-   
-   const clockOut = async () => {
-     if (!user) return notify("Login required");
-   
-     if (clockLoading) return;
-   
-     setClockLoading(true);
-     clickSound.play();
-     notify("⏳ Recording Clock Out...");
-   
-     try {
-   
-       const ud = await getDoc(doc(db, "users", user.uid));
-       const userData = ud.exists() ? ud.data() : {};
-   
-       const locationMode = getAttendanceLocationModeValue(userData);
-   
-       const locationResult = await getAttendanceLocationPayload(
-         userData,
-         locationMode,
-         "clock out"
-       );
-   
-       if (!locationResult.allowed) {
-         setClockLoading(false);
-         return notify(locationResult.message);
-       }
-   
-       const today = getTodayDateYangon();
-   
-       const q = query(
-         collection(db, "attendance"),
-         where("userId", "==", user.uid),
-         where("date", "==", today)
-       );
-   
-       const snap = await getDocs(q);
-   
-       if (snap.empty) {
-         setClockLoading(false);
-         return notify("⚠️ You haven't clocked in today.");
-       }
-   
-       const attDoc = snap.docs[0];
-   
-       const now = new Date();
-       
-      await updateDoc(doc(db, "attendance", attDoc.id), {
-        clockOut: now.toISOString(),
-        serverClockOut: serverTimestamp(),
-        locationName:
-          locationResult.locationName || attDoc.data()?.locationName || "",
-        locationOut: locationResult.locationData,
-        attendanceLocationMode: locationMode,
-      });
-       successSound.play();
-   
-       const successMsg = locationResult.locationName
-         ? `✅ Clock Out recorded at ${locationResult.locationName}`
-         : locationMode === "disabled"
-         ? "✅ Clock Out recorded without GPS."
-         : "✅ Clock Out recorded. GPS was skipped.";
-   
-       notify(successMsg);
-   
-       loadAttendance(user.uid);
-       if (isAdmin) loadAllAttendance();
-   
-     } catch (err) {
-       console.error(err);
-       notify("❌ Clock Out failed: " + err.message);
-     }
-   
-     setClockLoading(false);
-   };
+  const clockIn = async () => {
+  if (!user) return notify("Login required");
+
+  if (clockLoading) return; // prevent double click
+
+  setClockLoading(true);
+  clickSound.play();
+  notify("⏳ Recording Clock In...");
+
+  try {
+
+    const ud = await getDoc(doc(db, "users", user.uid));
+    const userData = ud.exists() ? ud.data() : {};
+
+    const locationMode = getAttendanceLocationModeValue(userData);
+    const locationResult = await getAttendanceLocationPayload(
+      userData,
+      locationMode,
+      "clock in"
+    );
+
+    if (!locationResult.allowed) {
+      setClockLoading(false);
+      return notify(locationResult.message);
+    }
+
+    const today = getTodayDateYangon();
+
+    const q = query(
+      collection(db, "attendance"),
+      where("userId", "==", user.uid),
+      where("date", "==", today)
+    );
+
+    const snap = await getDocs(q);
+
+    if (!snap.empty) {
+      setClockLoading(false);
+      return notify("⚠️ Already clocked in today.");
+    }
+
+    const now = new Date();
+
+    await addDoc(collection(db, "attendance"), {
+      userId: user.uid,
+      date: today,
+      clockIn: now.toISOString(),
+      serverClockIn: serverTimestamp(),
+      locationName: locationResult.locationName || "",
+      locationIn: locationResult.locationData,
+      attendanceLocationMode: locationMode,
+    });
+    successSound.play();
+
+    const successMsg = locationResult.locationName
+      ? `✅ Clock In recorded at ${locationResult.locationName}`
+      : locationMode === "disabled"
+      ? "✅ Clock In recorded without GPS."
+      : "✅ Clock In recorded. GPS was skipped.";
+
+    notify(successMsg);
+
+    loadAttendance(user.uid);
+   /*  if (isAdmin) loadAllAttendance(); */
+
+  } catch (err) {
+    console.error(err);
+    notify("❌ Clock In failed: " + err.message);
+  }
+
+  setClockLoading(false);
+};
+
+const clockOut = async () => {
+  if (!user) return notify("Login required");
+
+  if (clockLoading) return;
+
+  setClockLoading(true);
+  clickSound.play();
+  notify("⏳ Recording Clock Out...");
+
+  try {
+
+    const ud = await getDoc(doc(db, "users", user.uid));
+    const userData = ud.exists() ? ud.data() : {};
+
+    const locationMode = getAttendanceLocationModeValue(userData);
+
+    const locationResult = await getAttendanceLocationPayload(
+      userData,
+      locationMode,
+      "clock out"
+    );
+
+    if (!locationResult.allowed) {
+      setClockLoading(false);
+      return notify(locationResult.message);
+    }
+
+    const today = getTodayDateYangon();
+
+    const q = query(
+      collection(db, "attendance"),
+      where("userId", "==", user.uid),
+      where("date", "==", today)
+    );
+
+    const snap = await getDocs(q);
+
+    if (snap.empty) {
+      setClockLoading(false);
+      return notify("⚠️ You haven't clocked in today.");
+    }
+
+    const attDoc = snap.docs[0];
+
+   const now = new Date();
+
+  await updateDoc(doc(db, "attendance", attDoc.id), {
+    clockOut: now.toISOString(),
+    serverClockOut: serverTimestamp(),
+    locationName:
+      locationResult.locationName || attDoc.data()?.locationName || "",
+    locationOut: locationResult.locationData,
+    attendanceLocationMode: locationMode,
+  });
+
+    successSound.play();
+
+    const successMsg = locationResult.locationName
+      ? `✅ Clock Out recorded at ${locationResult.locationName}`
+      : locationMode === "disabled"
+      ? "✅ Clock Out recorded without GPS."
+      : "✅ Clock Out recorded. GPS was skipped.";
+
+    notify(successMsg);
+
+    loadAttendance(user.uid);
+    if (isAdmin) loadAllAttendance();
+
+  } catch (err) {
+    console.error(err);
+    notify("❌ Clock Out failed: " + err.message);
+  }
+
+  setClockLoading(false);
+};
 
 
   // attendance edit by admin
@@ -2304,7 +2405,6 @@ const checkLocationRange = async () => {
     setEditClockIn(att?.clockInTime || (att?.clockIn ? toMyanmarTime(att.clockIn) : ""));
     setEditClockOut(att?.clockOutTime || (att?.clockOut ? toMyanmarTime(att.clockOut) : ""));
   };
-
 
   const [selectedUserId, setSelectedUserId] = useState("");
 
@@ -2373,21 +2473,13 @@ const checkLocationRange = async () => {
   }
 };
 
-  const [attendanceSearch, setAttendanceSearch] = useState("");
-  const [attendanceMonth, setAttendanceMonth] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; // "YYYY-MM"
-  });
-
   const getEmp = (uid) => usersMap?.[uid] || {};
   const getEid = (uid) => getEmp(uid)?.eid || "";
   const getEmpName = (uid) => getEmp(uid)?.name || displayUser(uid) || "";
   const getEmpEmail = (uid) => getEmp(uid)?.email || "";
 
-  const filteredAttendance = (allAttendance || [])
-  .filter((a) => shouldShowRecordForUser(a.userId, a.date))
-  .filter((a) => {
-    // month filter: a.date should be "YYYY-MM-DD"
+    /* const filteredAttendance = (allAttendance || [])
+.filter((a) => {
     if (!attendanceMonth) return true;
     return (a.date || "").startsWith(attendanceMonth);
   })
@@ -2407,11 +2499,39 @@ const checkLocationRange = async () => {
 
     return hay.includes(q);
   })
-  // optional: sort latest first
+
+  .sort((x, y) => (y.date || "").localeCompare(x.date || ""));
+ */
+
+  const filteredAttendance = (allAttendance || [])
+  .filter((a) => shouldShowRecordForUser(a.userId, a.date))
+  .filter((a) => {
+    if (!attendanceMonth) return true;
+    return (a.date || "").startsWith(attendanceMonth);
+  })
+  .filter((a) => {
+    const q = attendanceSearch.trim().toLowerCase();
+    if (!q) return true;
+
+    const uid = a.userId;
+    const hay = [
+      getEid(uid),
+      getEmpName(uid),
+      getEmpEmail(uid),
+      a.date || "",
+    ]
+      .join(" ")
+      .toLowerCase();
+
+    return hay.includes(q);
+  })
   .sort((x, y) => (y.date || "").localeCompare(x.date || ""));
 
-    /* Monthly attendance summary */
-   const monthAttendance = (allAttendance || []).filter(
+  /*   const monthAttendance = (allAttendance || []).filter((a) =>
+  (a.date || "").startsWith(attendanceMonth)
+); */
+
+const monthAttendance = (allAttendance || []).filter(
   (a) =>
     (a.date || "").startsWith(attendanceMonth) &&
     shouldShowRecordForUser(a.userId, a.date)
@@ -2434,6 +2554,7 @@ const monthlySummaryByUser = Object.keys(usersMap || {})
       missingClockOut,
     };
   })
+
   // sort by employee id order
   .sort((a, b) => (a.eid || "").localeCompare(b.eid || ""));
 
@@ -2510,7 +2631,21 @@ const adminBulkCreateMonthAttendance = async () => {
     let skippedCount = 0;
 
     for (const dateStr of dates) {
-      const docId = `${selectedUserId}_${dateStr}`; // ✅ unique per day
+      const dayIndex = new Date(`${dateStr}T00:00:00`).getDay();
+      const isWeekend = dayIndex === 0 || dayIndex === 6;
+
+      // check holiday
+      const holidayRef = doc(db, "companyCalendar", dateStr);
+      const holidaySnap = await getDoc(holidayRef);
+      const isHoliday = holidaySnap.exists();
+
+      // ❗ skip weekend & holiday
+      if (isWeekend || isHoliday) {
+        skippedCount++;
+        continue;
+      }
+
+      const docId = `${selectedUserId}_${dateStr}`;
       const ref = doc(db, "attendance", docId);
 
       const existsSnap = await getDoc(ref);
@@ -2520,13 +2655,25 @@ const adminBulkCreateMonthAttendance = async () => {
         continue;
       }
 
-      const clockInISO = createIn
+      const existing = existsSnap.exists() ? existsSnap.data() : {};
+
+      const clockInISO =
+        existing.clockIn || !createIn
+          ? existing.clockIn || null
+          : makeISOFromDateAndTimeYangon(dateStr, createIn);
+
+      const clockOutISO =
+        existing.clockOut || !createOut
+          ? existing.clockOut || null
+          : makeISOFromDateAndTimeYangon(dateStr, createOut);
+
+     /*  const clockInISO = createIn
         ? makeISOFromDateAndTimeYangon(dateStr, createIn)
         : null;
 
       const clockOutISO = createOut
         ? makeISOFromDateAndTimeYangon(dateStr, createOut)
-        : null;
+        : null; */
 
       batch.set(
         ref,
@@ -2665,6 +2812,7 @@ const getLeaveDayAbbr = (leave) => {
   return "FL";
 };
 
+
 const getLeaveAbbreviationForDate = (userId, date) => {
   const leave = allLeaves.find((l) => {
     if (l.userId !== userId) return false;
@@ -2685,30 +2833,6 @@ const getLeaveAbbreviationForDate = (userId, date) => {
   return `${dayAbbr}/${typeAbbr}`;
 };
 
-
-
-// attendance edit by leader
-const [editingLeaderAttendance, setEditingLeaderAttendance] = useState(null);
-const [leaderEditIn, setLeaderEditIn] = useState("");
-const [leaderEditOut, setLeaderEditOut] = useState("");
-
-const [nameFilter, setNameFilter] = useState("");
-const [dateFilter, setDateFilter] = useState("");
-const [fromDate, setFromDate] = useState("");
-const [toDate, setToDate] = useState("");
-
-const [attendanceNameFilter, setAttendanceNameFilter] = useState("");
-const [leaveNameFilter, setLeaveNameFilter] = useState("");
-const [leaveFromDate, setLeaveFromDate] = useState("");
-const [leaveToDate, setLeaveToDate] = useState("");
-const [otNameFilter, setOtNameFilter] = useState("");
-
-// Admin filters: show approved/rejected (pending is default)
-const [showApprovedLeave, setShowApprovedLeave] = useState(false);
-const [showRejectedLeave, setShowRejectedLeave] = useState(false);
-
-const [showApprovedOT, setShowApprovedOT] = useState(false);
-const [showRejectedOT, setShowRejectedOT] = useState(false);
 
 const resetFilters = () => {
   setNameFilter("");
@@ -2751,6 +2875,35 @@ const [monthFilter, setMonthFilter] = useState(getCurrentMonth());
 const [attendanceMonthFilter, setAttendanceMonthFilter] = useState(getCurrentMonth());
 const [otMonthFilter, setOtMonthFilter] = useState(getCurrentMonth());
 
+const [poSearch, setPoSearch] = useState("");
+const [poDeptFilter, setPoDeptFilter] = useState("");
+const [poMonthFilter, setPoMonthFilter] = useState(getCurrentMonth());
+
+const [myAttendanceMonth, setMyAttendanceMonth] = useState(() => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+});
+
+const filteredMyAttendance = (attendance || []).filter((a) =>
+  myAttendanceMonth ? (a.date || "").startsWith(myAttendanceMonth) : true
+);
+
+const [myLeaveMonth, setMyLeaveMonth] = useState(() => getCurrentMonth());
+const [myOtMonth, setMyOtMonth] = useState(() => getCurrentMonth());
+const [myPOMonth, setMyPOMonth] = useState(() => getCurrentMonth());
+
+const filteredMyLeaves = (leaves || []).filter((l) =>
+  myLeaveMonth ? (l.startDate || "").startsWith(myLeaveMonth) : true
+);
+
+const filteredMyOvertime = (overtimeReqs || []).filter((ot) =>
+  myOtMonth ? (ot.date || "").startsWith(myOtMonth) : true
+);
+
+const filteredMyPO = (poList || []).filter((p) =>
+  myPOMonth ? (p.date || "").startsWith(myPOMonth) : true
+);
+
 const filteredMemberAttendance = leaderAttendance.filter(row => {
   const name = usersMap[row.userId]?.name;
   const matchName = safe(name).includes(safe(attendanceNameFilter));
@@ -2781,7 +2934,6 @@ const filteredMemberLeaves = leaderLeaves.filter(row => {
   return matchName;
 });
 
-
 const filteredMemberOT = leaderOvertime.filter(row => {
   const name = usersMap[row.userId]?.name;
   const matchName = safe(name).includes(safe(otNameFilter));
@@ -2798,6 +2950,7 @@ const filteredAllMemberLeaves = allLeaves.filter((row) => {
   const matchName = safe(name).includes(safe(nameFilter));
   const dept = usersMap[row.userId]?.department || "";
   const matchDept = !deptFilter || dept === deptFilter;
+  
 
   // ---------- Date range overlap ----------
   const rowStart = new Date(row.startDate);
@@ -2823,15 +2976,15 @@ const filteredAllMemberLeaves = allLeaves.filter((row) => {
   return matchName && matchDept && matchStatus;
 });
 
+
 useEffect(() => {
   const today = new Date().toISOString().slice(0, 10);
   setFromDate(today);
   setToDate(today);
 }, []);
 
-
 const filteredAllMemberOT = allOvertime.filter((row) => {
-  if (!shouldShowRecordForUser(row.userId, row.startDate)) return false;
+   if (!shouldShowRecordForUser(row.userId, row.startDate)) return false;
   const name = usersMap[row.userId]?.name;
   const matchName = safe(name).includes(safe(nameFilter));
 
@@ -2846,6 +2999,17 @@ const filteredAllMemberOT = allOvertime.filter((row) => {
   return matchName && matchDate && allowed.has(s);
 });
 
+const filteredAllPoReports = allPoList.filter((row) => {
+  const u = usersMap[row.userId] || {};
+
+  const matchName = safe(u.name).includes(safe(poSearch));
+  const matchDept = !poDeptFilter || u.department === poDeptFilter;
+  const matchMonth =
+    !poMonthFilter || (row.date || "").startsWith(poMonthFilter);
+
+  return matchName && matchDept && matchMonth;
+});
+
 const leaderUpdateAttendanceTime = async () => {
   if (!editingLeaderAttendance) return;
 
@@ -2857,7 +3021,6 @@ const leaderUpdateAttendanceTime = async () => {
     const clockOutISO = leaderEditOut
       ? makeISOFromDateAndTimeYangon(editingLeaderAttendance.date, leaderEditOut)
       : null;
-
 
     await updateDoc(doc(db, "attendance", editingLeaderAttendance.id), {
       clockIn: clockInISO,
@@ -2927,7 +3090,7 @@ const leaderUpdateAttendanceTime = async () => {
     setLeaveBalances(map);
   };
 
-    
+
   const summaryLeaveTypes = ["Casual Leave", "Annual Leave", "Medical Leave","WithoutPay Leave", "Maternity Leave",];
   const saveLeaveBalance = async (uid) => {
     const data = leaveBalances[uid];
@@ -2982,6 +3145,8 @@ const leaderUpdateAttendanceTime = async () => {
 
 const todayStr = getTodayDateYangon();
 const currentMonthStr = todayStr.slice(0, 7);
+
+
 
 const [selectedCalendarDate, setSelectedCalendarDate] = useState(() =>
   getTodayDateYangon()
@@ -3044,6 +3209,7 @@ const monthPresentDays = monthAttendanceRows.length;
 
 const LATE_LIMIT = 8 * 60;       // 08:00
 const EARLY_OUT_LIMIT = 17 * 60; // 17:00
+
 
 /* Filter current user's attendance for that month */
 const myMonthAttendance = attendance.filter(
@@ -3148,7 +3314,7 @@ const selectedDayLeaves = leaves.filter((l) => {
 
 const selectedDayWeekday = new Date(`${selectedCalendarDate}T00:00:00`).toLocaleDateString(
   "en-US",
-  { weekday: "long", month: "long", day: "2-digit", year:"numeric" }
+  { weekday: "long", month: "long", day: "2-digit",year:"numeric" }
 );
 
 const selectedDayIsLate =
@@ -3197,7 +3363,6 @@ const selectedDayIsAbsentFull =
   !selectedDayIsOffDay &&
   !selectedDayHasIn &&
   !selectedDayHasOut;
-
  
    // ---------------- Admin: Save Two Locations ----------------
    const saveEmployeeLocations = async (emp) => {
@@ -3208,137 +3373,137 @@ const selectedDayIsAbsentFull =
    };
 
    const saveEmployeeGpsSetting = async (emp) => {
-        try {
-          const attendanceLocationMode = getAttendanceLocationModeValue(emp);
-          await updateDoc(doc(db, "users", emp.id), { attendanceLocationMode });
-          notify("✅ GPS setting saved successfully.");
-          loadEmployees();
-          loadAllUsers();
-        } catch (err) {
-          console.error(err);
-          notify("❌ Cannot save GPS setting: " + err.message);
-        }
-      };
-   
-      const getGeoPosition = () =>
-        new Promise((resolve, reject) => {
-          if (!navigator.geolocation) {
-            reject(new Error("Geolocation not supported."));
-            return;
-          }
-   
-          navigator.geolocation.getCurrentPosition(
-            (pos) => resolve(pos),
-            (err) => reject(err),
-            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-          );
-        });
-   
-      const getAttendanceLocationPayload = async (userDocData, mode, actionLabel) => {
-        const normalizedMode = getAttendanceLocationModeValue({ attendanceLocationMode: mode });
-        const locations = userDocData?.locations || [];
-   
-        if (normalizedMode === "disabled") {
-          return {
-            allowed: true,
-            locationName: "",
-            locationData: null,
-          };
-        }
-   
-        if (!navigator.geolocation) {
-          if (normalizedMode === "optional") {
-            return {
-              allowed: true,
-              locationName: "",
-              locationData: null,
-            };
-          }
-   
-          return {
-            allowed: false,
-            message: "Geolocation not supported.",
-          };
-        }
-   
-        if (!locations || locations.length === 0) {
-          if (normalizedMode === "optional") {
-            return {
-              allowed: true,
-              locationName: "",
-              locationData: null,
-            };
-          }
-   
-          return {
-            allowed: false,
-            message: "No saved locations. Ask admin to add them.",
-          };
-        }
-   
-        try {
-          const pos = await getGeoPosition();
-          const { latitude, longitude } = pos.coords;
-          const matchedName = isWithinRangeOfAny(latitude, longitude, locations);
-   
-          if (!matchedName && normalizedMode === "required") {
-            return {
-              allowed: false,
-              message: `🚫 Too far from any registered location for ${actionLabel}.`,
-            };
-          }
-   
-          if (!matchedName && normalizedMode === "optional") {
-            return {
-              allowed: true,
-              locationName: "",
-              locationData: null,
-            };
-          }
-   
-          return {
-            allowed: true,
-            locationName: matchedName || "",
-            locationData: matchedName ? { latitude, longitude } : null,
-          };
-        } catch (err) {
-          if (normalizedMode === "optional") {
-            return {
-              allowed: true,
-              locationName: "",
-              locationData: null,
-            };
-          }
-   
-          return {
-            allowed: false,
-            message: "Unable to get location: " + err.message,
-          };
-        }
-      };
+     try {
+       const attendanceLocationMode = getAttendanceLocationModeValue(emp);
+       await updateDoc(doc(db, "users", emp.id), { attendanceLocationMode });
+       notify("✅ GPS setting saved successfully.");
+       loadEmployees();
+       loadAllUsers();
+     } catch (err) {
+       console.error(err);
+       notify("❌ Cannot save GPS setting: " + err.message);
+     }
+   };
+
+   const getGeoPosition = () =>
+     new Promise((resolve, reject) => {
+       if (!navigator.geolocation) {
+         reject(new Error("Geolocation not supported."));
+         return;
+       }
+
+       navigator.geolocation.getCurrentPosition(
+         (pos) => resolve(pos),
+         (err) => reject(err),
+         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+       );
+     });
+
+   const getAttendanceLocationPayload = async (userDocData, mode, actionLabel) => {
+     const normalizedMode = getAttendanceLocationModeValue({ attendanceLocationMode: mode });
+     const locations = userDocData?.locations || [];
+
+     if (normalizedMode === "disabled") {
+       return {
+         allowed: true,
+         locationName: "",
+         locationData: null,
+       };
+     }
+
+     if (!navigator.geolocation) {
+       if (normalizedMode === "optional") {
+         return {
+           allowed: true,
+           locationName: "",
+           locationData: null,
+         };
+       }
+
+       return {
+         allowed: false,
+         message: "Geolocation not supported.",
+       };
+     }
+
+     if (!locations || locations.length === 0) {
+       if (normalizedMode === "optional") {
+         return {
+           allowed: true,
+           locationName: "",
+           locationData: null,
+         };
+       }
+
+       return {
+         allowed: false,
+         message: "No saved locations. Ask admin to add them.",
+       };
+     }
+
+     try {
+       const pos = await getGeoPosition();
+       const { latitude, longitude } = pos.coords;
+       const matchedName = isWithinRangeOfAny(latitude, longitude, locations);
+
+       if (!matchedName && normalizedMode === "required") {
+         return {
+           allowed: false,
+           message: `🚫 Too far from any registered location for ${actionLabel}.`,
+         };
+       }
+
+       if (!matchedName && normalizedMode === "optional") {
+         return {
+           allowed: true,
+           locationName: "",
+           locationData: null,
+         };
+       }
+
+       return {
+         allowed: true,
+         locationName: matchedName || "",
+         locationData: matchedName ? { latitude, longitude } : null,
+       };
+     } catch (err) {
+       if (normalizedMode === "optional") {
+         return {
+           allowed: true,
+           locationName: "",
+           locationData: null,
+         };
+       }
+
+       return {
+         allowed: false,
+         message: "Unable to get location: " + err.message,
+       };
+     }
+   };
 
   /* ---------------- leave & overtime (staff) ---------------- */
   const applyLeave = async () => {
     if (!leaveStart || !leaveEnd || !leaveReason) return notify("Please fill leave start, end and reason.");
-       await addDoc(collection(db, "leaves"), {
-          userId: user.uid,
-          startDate: leaveStart,
-          endDate: leaveEnd,
-          leaveType,
-          leaveName,
-          reason: leaveReason,
-    
-          // 2-step workflow
-          status: "pending",          // display status
-          leaderStatus: "pending",
-          adminStatus: "pending",
-    
-          leaderActionBy: null,
-          leaderActionAt: null,
-          adminActionBy: null,
-          adminActionAt: null,
-    
-          createdAt: new Date().toISOString(),
+    await addDoc(collection(db, "leaves"), {
+      userId: user.uid,
+      startDate: leaveStart,
+      endDate: leaveEnd,
+      leaveType,
+      leaveName,
+      reason: leaveReason,
+
+      // 2-step workflow
+      status: "pending",          // display status
+      leaderStatus: "pending",
+      adminStatus: "pending",
+
+      leaderActionBy: null,
+      leaderActionAt: null,
+      adminActionBy: null,
+      adminActionAt: null,
+
+      createdAt: new Date().toISOString(),
     });
 
     setLeaveStart(""); setLeaveEnd(""); setLeaveReason("");
@@ -3371,15 +3536,16 @@ const selectedDayIsAbsentFull =
     if (isAdmin) loadAllOvertime();
   };
 
-    const updateOvertimeStatus = async (id, status) => {
-    await updateDoc(doc(db, "overtimeRequests", id), {
-      status,
-      actionBy: user.uid,
-      actionAt: new Date().toISOString(),
-    });
-    notify(`Overtime ${status}`);
-    loadAllOvertime();
-  };
+
+  const updateOvertimeStatus = async (id, status) => {
+  await updateDoc(doc(db, "overtimeRequests", id), {
+    status,
+    actionBy: user.uid,
+    actionAt: new Date().toISOString(),
+  });
+  notify(`Overtime ${status}`);
+  loadAllOvertime();
+};
 
 const leaderUpdateLeaveStatus = async (leaveDocId, decision, memberUserId) => {
   if (!leaderMembers.includes(memberUserId)) {
@@ -3670,6 +3836,10 @@ const deleteOvertimeRequest = async (id) => {
   }
 };
 
+
+
+
+
 /* leave request edit by Staff */
 const [editingMyLeave, setEditingMyLeave] = useState(null);
 const [myEditStart, setMyEditStart] = useState("");
@@ -3819,154 +3989,168 @@ const leaveSummaryUids = Object.keys(usersMap || {})
   .sort((a, b) => (getEid(a) || "").localeCompare(getEid(b) || ""));
 
   /* export excel start */
-        const exportToExcel = (rows, filename, sheetName = "Sheet1") => {
-        try {
-          const ws = XLSX.utils.json_to_sheet(rows);
-          const wb = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(wb, ws, sheetName);
-  
-          const excelBuffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-          const data = new Blob([excelBuffer], {
-            type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          });
-  
-          saveAs(data, `${filename}.xlsx`);
-        } catch (e) {
-          console.error(e);
-          notify("❌ Export failed: " + (e?.message || "unknown error"));
-        }
-      };
-       
-        const [exportMonth, setExportMonth] = useState(() => {
-        const d = new Date();
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; // YYYY-MM
-        });
-        const [exportUserQuery, setExportUserQuery] = useState(""); // employee id/name/email
-        const [exportUserId, setExportUserId] = useState("");       // optional: exact staff select
-  
-        const ExportmonthRange = (yyyyMm) => {
-          const [y, m] = yyyyMm.split("-").map(Number);
-          const start = `${y}-${String(m).padStart(2, "0")}-01`;
-          const nextMonth = new Date(y, m, 1);
-          const endExclusive = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, "0")}-01`;
-          return { start, endExclusive };
-        };
-  
-        const staffMatches = (userId, query) => {
-          if (!query) return true;
-          const u = usersMap?.[userId] || {};
-          const text = `${u.eid || ""} ${u.name || ""} ${u.email || ""}`.toLowerCase();
-          return text.includes(query.toLowerCase());
-        };
-  
-        //Attendance (date is inside month)
-        const exportAttendanceExcelFiltered = () => {
-        const { start, endExclusive } = ExportmonthRange(exportMonth);
-  
-        const filtered = (allAttendance || []).filter((a) => {
-          if (!a?.date) return false;
-          if (a.date < start || a.date >= endExclusive) return false;
-  
-          if (exportUserId) return a.userId === exportUserId;
-          return staffMatches(a.userId, exportUserQuery);
-        });
-  
-        const rows = filtered.map((a) => ({
-          Date: a.date || "",
-          EmployeeID: usersMap?.[a.userId]?.eid || "",
-          Name: usersMap?.[a.userId]?.name || "",
-          Email: usersMap?.[a.userId]?.email || "",
-          ClockIn: a.clockInTime || "",
-          ClockOut: a.clockOutTime || "",
-        }));
-  
-        exportToExcel(rows, `Attendance_${exportMonth}`, "Attendance");
-      };
-  
-      //OT (same idea, OT has date)
-        const exportOTExcelFiltered = () => {
-        const { start, endExclusive } = monthRange(exportMonth);
-  
-        const filtered = (allOvertime || []).filter((ot) => {
-          if (!ot?.date) return false;
-          if (ot.date < start || ot.date >= endExclusive) return false;
-  
-          if (exportUserId) return ot.userId === exportUserId;
-          return staffMatches(ot.userId, exportUserQuery);
-        });
-  
-        const rows = filtered.map((ot) => ({
-          Date: ot.date || "",
-          EmployeeID: usersMap?.[ot.userId]?.eid || "",
-          Name: usersMap?.[ot.userId]?.name || "",
-          Email: usersMap?.[ot.userId]?.email || "",
-          Start: ot.startTime || "",
-          End: ot.endTime || "",
-          Hours: ot.hours || "",
-          Reason: ot.reason || "",
-          Status: ot.status || "",
-        }));
-  
-        exportToExcel(rows, `OT_${exportMonth}`, "OT");
-      };
-  
-      //Leave (overlap with month)
-      const exportLeaveExcelFiltered = () => {
-      const { start, endExclusive } = monthRange(exportMonth);
-  
-      const filtered = (allLeaves || []).filter((lv) => {
-        const s = lv?.startDate;
-        const e = lv?.endDate;
-        if (!s || !e) return false;
-  
-        // overlap condition: [s,e] overlaps [start, endExclusive)
-        const overlaps = !(e < start || s >= endExclusive);
-        if (!overlaps) return false;
-  
-        if (exportUserId) return lv.userId === exportUserId;
-        return staffMatches(lv.userId, exportUserQuery);
-      });
-  
-      const rows = filtered.map((lv) => ({
-        StartDate: lv.startDate || "",
-        EndDate: lv.endDate || "",
-        EmployeeID: usersMap?.[lv.userId]?.eid || "",
-        Name: usersMap?.[lv.userId]?.name || "",
-        Email: usersMap?.[lv.userId]?.email || "",
-        Type: lv.leaveType || lv.type || "",
-        Reason: lv.reason || "",
-        Status: lv.status || "",
-      }));
-  
-      exportToExcel(rows, `Leave_${exportMonth}`, "Leave");
-    };
-  
-    //Employee info (filter by name/id/email only)
-    const exportEmployeesExcelFiltered = () => {
-    const q = exportUserQuery.trim().toLowerCase();
-  
-    const filtered = (employees || []).filter((e) => {
-      if (!q) return true;
-      const text = `${e.eid || ""} ${e.name || ""} ${e.email || ""}`.toLowerCase();
-      return text.includes(q);
-    });
-  
-    const rows = filtered.map((e) => ({
-      EmployeeID: e.eid || "",
-      Name: e.name || "",
-      Email: e.email || "",
-      Department: e.department || "",
-      Designation: e.designation || "",
-      Phone: e.phone || "",
-      Role: e.role || (e.roles || []).join(", "),
-    }));
-  
-    exportToExcel(rows, `Employees_${exportMonth}`, "Employees");
-  };
-  
-  
-    // export excel end
+      const exportToExcel = (rows, filename, sheetName = "Sheet1") => {
+      try {
+        const ws = XLSX.utils.json_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
 
+        const excelBuffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+        const data = new Blob([excelBuffer], {
+          type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        });
+
+        saveAs(data, `${filename}.xlsx`);
+      } catch (e) {
+        console.error(e);
+        notify("❌ Export failed: " + (e?.message || "unknown error"));
+      }
+    };
+     
+      const [exportMonth, setExportMonth] = useState(() => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; // YYYY-MM
+      });
+      const [exportUserQuery, setExportUserQuery] = useState(""); // employee id/name/email
+      const [exportUserId, setExportUserId] = useState("");       // optional: exact staff select
+
+      const ExportmonthRange = (yyyyMm) => {
+        const [y, m] = yyyyMm.split("-").map(Number);
+        const start = `${y}-${String(m).padStart(2, "0")}-01`;
+        const nextMonth = new Date(y, m, 1);
+        const endExclusive = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, "0")}-01`;
+        return { start, endExclusive };
+      };
+
+      const staffMatches = (userId, query) => {
+        if (!query) return true;
+        const u = usersMap?.[userId] || {};
+        const text = `${u.eid || ""} ${u.name || ""} ${u.email || ""}`.toLowerCase();
+        return text.includes(query.toLowerCase());
+      };
+
+      //Attendance (date is inside month)
+      const exportAttendanceExcelFiltered = () => {
+      const { start, endExclusive } = ExportmonthRange(exportMonth);
+
+      const filtered = (allAttendance || []).filter((a) => {
+        if (!a?.date) return false;
+        if (a.date < start || a.date >= endExclusive) return false;
+
+        if (exportUserId) return a.userId === exportUserId;
+        return staffMatches(a.userId, exportUserQuery);
+      });
+
+      const rows = filtered.map((a) => ({
+        Date: a.date || "",
+        EmployeeID: usersMap?.[a.userId]?.eid || "",
+        Name: usersMap?.[a.userId]?.name || "",
+        Email: usersMap?.[a.userId]?.email || "",
+        ClockIn: a.clockInTime || "",
+        ClockOut: a.clockOutTime || "",
+      }));
+
+      exportToExcel(rows, `Attendance_${exportMonth}`, "Attendance");
+    };
+
+    //OT (same idea, OT has date)
+      const exportOTExcelFiltered = () => {
+      const { start, endExclusive } = ExportmonthRange(exportMonth);
+
+      const filtered = (allOvertime || []).filter((ot) => {
+        if (!ot?.date) return false;
+        if (ot.date < start || ot.date >= endExclusive) return false;
+
+        if (exportUserId) return ot.userId === exportUserId;
+        return staffMatches(ot.userId, exportUserQuery);
+      });
+
+      const rows = filtered.map((ot) => ({
+        Date: ot.date || "",
+        EmployeeID: usersMap?.[ot.userId]?.eid || "",
+        Name: usersMap?.[ot.userId]?.name || "",
+        Email: usersMap?.[ot.userId]?.email || "",
+        Start: ot.startTime || "",
+        End: ot.endTime || "",
+        Hours: ot.hours || "",
+        Reason: ot.reason || "",
+        Status: ot.status || "",
+      }));
+
+      exportToExcel(rows, `OT_${exportMonth}`, "OT");
+    };
+
+    //Leave (overlap with month)
+    const exportLeaveExcelFiltered = () => {
+    const { start, endExclusive } = ExportmonthRange(exportMonth);
+
+    const filtered = (allLeaves || []).filter((lv) => {
+      const s = lv?.startDate;
+      const e = lv?.endDate;
+      if (!s || !e) return false;
+
+      // overlap condition: [s,e] overlaps [start, endExclusive)
+      const overlaps = !(e < start || s >= endExclusive);
+      if (!overlaps) return false;
+
+      if (exportUserId) return lv.userId === exportUserId;
+      return staffMatches(lv.userId, exportUserQuery);
+    });
+
+    const rows = filtered.map((lv) => ({
+      StartDate: lv.startDate || "",
+      EndDate: lv.endDate || "",
+      EmployeeID: usersMap?.[lv.userId]?.eid || "",
+      Name: usersMap?.[lv.userId]?.name || "",
+      Email: usersMap?.[lv.userId]?.email || "",
+      Type: lv.leaveType || lv.type || "",
+      Reason: lv.reason || "",
+      Status: lv.status || "",
+    }));
+
+    exportToExcel(rows, `Leave_${exportMonth}`, "Leave");
+  };
+
+  //Employee info (filter by name/id/email only)
+  const exportEmployeesExcelFiltered = () => {
+  const q = exportUserQuery.trim().toLowerCase();
+
+  const filtered = (employees || []).filter((e) => {
+    if (!q) return true;
+    const text = `${e.eid || ""} ${e.name || ""} ${e.email || ""}`.toLowerCase();
+    return text.includes(q);
+  });
+
+  const rows = filtered.map((e) => ({
+    EmployeeID: e.eid || "",
+    Name: e.name || "",
+    Email: e.email || "",
+    Department: e.department || "",
+    Designation: e.designation || "",
+    Phone: e.phone || "",
+    Role: e.role || (e.roles || []).join(", "),
+  }));
+
+  exportToExcel(rows, `Employees_${exportMonth}`, "Employees");
+};
+
+useEffect(() => {
+  if (!user || !isAdmin || activeSidebar !== "admin-export") return;
+
+  (async () => {
+    if (Object.keys(usersMap || {}).length === 0) {
+      await loadAllUsers();
+    }
+
+    await loadEmployees();
+    await loadAllAttendance();
+    await loadAllOvertime();
+    await loadAllLeaves();
+  })();
+}, [user, isAdmin, activeSidebar, exportMonth]);
+
+
+  // export excel end
 
   /* ---------------- summary / csv / clear ---------------- */
   const getMonthlySummary = () => {
@@ -4236,6 +4420,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
   : s === "leader_approved" ? <span className="badge blue">Leader Approved</span>
   : <span className="badge yellow">Pending</span>;
 
+
   /* ---------------- render ---------------- */
   if (authLoading) {
   return <div style={{ padding: 20 }}>Loading...</div>;
@@ -4286,14 +4471,12 @@ const leaveSummaryUids = Object.keys(usersMap || {})
     );
   }
 
-
-
   return (
     <div className="app-layout">
       {/* --- SLIDE TOGGLE SIDEBAR --- */}
       {/* DARK OVERLAY */}
 {sidebarOpen && (
-  <div className="overlay-dark" onClick={() => setSidebarOpen(false)}></div>
+ <div className="overlay-dark" onClick={() => setSidebarOpen(false)}></div>
 )}
   {/* TOP BAR WITH HAMBURGER */}
 <div className="mobile-topbar">
@@ -4304,7 +4487,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
   </button>
 
   <span className="topbar-title">Simple'Z Attendance</span>
-
+  
   <div className="header-right">
   <div className="noti-wrapper">
   <button
@@ -4314,7 +4497,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
     markAllRead();
   }}
   >
-   <img src="/noti_bell.png" alt="Logout" className="noti-icon" />
+  <img src="/noti_bell.png" alt="Logout" className="noti-icon" />
   {unreadCount > 0 && (
   <span className="noti-badge">{unreadCount}</span>
   )}
@@ -4325,19 +4508,13 @@ const leaveSummaryUids = Object.keys(usersMap || {})
 </div>
 
 {/* SIDEBAR */}
-<div className={`sidebar ${sidebarOpen ? "open" : ""} ${desktopSidebarCollapsed ? "collapsed" : ""}`}>
-  <div className="brand">
-  <div className="brand-top">
-    <h3>Simple'Z Attendance</h3>
+  <div className={`sidebar ${sidebarOpen ? "open" : ""} ${desktopSidebarCollapsed ? "collapsed" : ""}`}>
 
-    <button
-type="button"
-className="desktop-collapse-btn"
-onClick={() => setDesktopSidebarCollapsed((prev) => !prev)}
-title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
->
-  {desktopSidebarCollapsed ? "☰" : "⟨⟨"}
-</button>
+  <div className="brand">
+    <div className="brand-top">
+       <button  type="button"  className="desktop-collapse-btn"  onClick={() => setDesktopSidebarCollapsed((prev) => !prev)}
+        title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}>{desktopSidebarCollapsed ? "☰" : "⟨⟨"}</button>
+        <h3>Simple'Z Attendance</h3>
     </div>
 
     {!desktopSidebarCollapsed && (
@@ -4346,7 +4523,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
     )}
   </div>
 
-  <nav>
+    <nav>
     <button  type="button"  className="menu-group-btn"  onClick={() => handleGroupClick("myMenu")}  title="My Menu">
     {desktopSidebarCollapsed ? (<span className="group-icon">🏠</span>  ) : (
       <>
@@ -4373,6 +4550,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         <a className="nav-item" href="?tab=my-payslip" onClick={(e) => handleTabClick(e, "my-payslip")}>
           <span className="icon">🧾</span>{!desktopSidebarCollapsed && <span className="nav-text">My Payslip</span>}
         </a>
+       
       </div>
     )}
 
@@ -4399,6 +4577,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             <a className="nav-item" href="?tab=member-ot-panel" onClick={(e) => handleTabClick(e, "member-ot-panel")}>
               <span className="icon">👥</span>{!desktopSidebarCollapsed && <span className="nav-text">Members OT Requests</span>}
             </a>
+           
           </div>
         )}
       </>
@@ -4416,11 +4595,11 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
     </button>
         {openMenuGroup === "adminEmployee" && (
           <div className="menu-group-list">
-            {canAccessPayroll && (
+          
               <a className="nav-item" href="?tab=admin-employee-form" onClick={(e) => handleTabClick(e, "admin-employee-form")}>
                 <span className="icon">🧾</span>{!desktopSidebarCollapsed && <span className="nav-text"> Employee Information</span>}
               </a>
-            )}
+           
             <a className="nav-item" href="?tab=admin-employee" onClick={(e) => handleTabClick(e, "admin-employee")}>
               <span className="icon">👥</span>{!desktopSidebarCollapsed && <span className="nav-text"> Employee Location</span>}
             </a>
@@ -4482,10 +4661,12 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             <a className="nav-item" href="?tab=admin-ot" onClick={(e) => handleTabClick(e, "admin-ot")}>
               <span className="icon">⏫</span> {!desktopSidebarCollapsed && <span className="nav-text">All Overtime Requests</span>}
             </a>
+            
           </div>
         )}
 
-         <button  type="button"  className="menu-group-btn"  onClick={() => handleGroupClick("adminPayroll")}  title="Payroll Management">
+         {canAccessPayroll && (
+        <button  type="button"  className="menu-group-btn"  onClick={() => handleGroupClick("adminPayroll")}  title="Payroll Management">
         {desktopSidebarCollapsed ? (<span className="group-icon">💰</span>  ) : (
           <>
             <span>Payroll Management</span>
@@ -4493,6 +4674,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           </>
         )}
        </button>
+         )}
 
         
         {openMenuGroup === "adminPayroll" && (
@@ -4508,11 +4690,14 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
               </>
             )}
 
-            <a className="nav-item" href="?tab=admin-export" onClick={(e) => handleTabClick(e, "admin-export")}>
-              <span className="icon">📤</span> {!desktopSidebarCollapsed && <span className="nav-text">Export Excel</span>}
-            </a>
+           
           </div>
         )}
+
+         <a className="nav-item blue" href="?tab=admin-export" onClick={(e) => handleTabClick(e, "admin-export")}>
+              <span className="icon">📤</span> {!desktopSidebarCollapsed && <span className="nav-text">Export Excel</span>}
+        </a>
+
       </>
     )}
 
@@ -4533,17 +4718,12 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
 
     </nav>
 
-    </div>
-     
+        
+      </div>
 
 
       {/* main content */}
       <main className={`main ${desktopSidebarCollapsed ? "expanded" : ""}`}>
-       {/*  <header className="main-header">
-          <h1>{activeSidebar.startsWith("admin") ? "Admin Dashboard" : "Employee Dashboard"}</h1>
-          <div className="main-sub">{message}</div>
-        </header> */}
-
         <div className="header-right">
         <div className="noti-wrapper">
         <button
@@ -4553,7 +4733,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           markAllRead();
         }}
         >
-         <img src="/noti_bell.png" alt="Logout" className="noti-icon" />
+        <img src="/noti_bell.png" alt="Logout" className="noti-icon" />
         {unreadCount > 0 && (
         <span className="noti-badge">{unreadCount}</span>
         )}
@@ -4577,7 +4757,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                   <p>No notifications</p>
                 ) : (
                   notifications.map((n) => (
-                     <div key={n.id} className="noti-item" onClick={() => openNotification(n)} style={{ cursor: "pointer" }}>
+                    <div key={n.id} className="noti-item" onClick={() => openNotification(n)} style={{ cursor: "pointer" }}>
                       <div className="noti-icon">
                         {n.type === "leave" && "A"}
                         {n.type === "payslip" && "ℹ️"}
@@ -4606,14 +4786,6 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             <p>  Hello {name || user?.email}, {getGreeting()}</p>
             </div>
 
-            <div className="dashboard-header">
-              {/* <div className="dashboard-date-card">
-              <span>Today</span>
-              <strong>{todayStr}</strong>
-              </div>
- */}
-              
-            </div>
           </div>        
 
           <div className="dashboard-main-layout">
@@ -4639,8 +4811,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                     })}
                   </div>
                   </div>
-
-                  <div className="time-display-card custom-time-dropdown">
+                   <div className="time-display-card custom-time-dropdown">
                 <label className="time-display-label">TimeZone Display</label>
 
                 <div className="time-dropdown">
@@ -4673,7 +4844,9 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                   )}
                 </div>
               </div>
-              </div>
+
+
+                  </div>
                   
                   <div className="dashboard-actions">
                     <button className="action-btn success" onClick={clockIn}>
@@ -4751,8 +4924,9 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                   const holiday = holidayMap[dateStr];
                   const dayIndex = new Date(`${dateStr}T00:00:00`).getDay();
                   const isWeekend = dayIndex === 0 || dayIndex === 6;
-                   const today = new Date().toISOString().slice(0, 10);
+                  const today = new Date().toISOString().slice(0, 10);
                   const isFuture = dateStr > today;
+                  
 
                   const dayLeaves = leaves.filter((l) => {
                     if ((l.status || "").toLowerCase() !== "approved") return false;
@@ -5016,29 +5190,47 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         </section>
       )}
 
+        
 
         {/* My Attendance list */}
-        {activeSidebar === "my-att" && (
+      {activeSidebar === "my-att" && (
           <section className="card">
             <h2>My Attendance</h2>
-            <table className="data-table">
+
+            <div className="myatt_table">
+              <input
+                type="month"
+                value={myAttendanceMonth}
+                onChange={(e) => setMyAttendanceMonth(e.target.value)}
+              />
+              <button className="btn" onClick={() => setMyAttendanceMonth("")}>
+                Clear
+              </button>
+            </div>
+              <table className="data-table">
               <thead><tr><th>Date</th><th>Clock In</th><th>Clock Out</th><th>In Loc</th><th>Out Loc</th></tr></thead>
               <tbody>
-                {attendance.length === 0 ? <tr><td colSpan="5">No records</td></tr> :
-                  attendance.map((a) => (
+                {filteredMyAttendance.length === 0 ? (
+                    <tr>
+                      <td colSpan="8" style={{ textAlign: "center", padding: "20px" }}>
+                        No attendance records for this month.
+                      </td>
+                    </tr>
+                  ) : (
+                 filteredMyAttendance.map((a) => (
                     <tr key={a.id}>
                       <td>{a.date}</td>
-                       <td>{a.clockIn ? formatTimeByViewMode(a.clockIn) : (a.clockInTime || "-")}</td>
+                      <td>{a.clockIn ? formatTimeByViewMode(a.clockIn) : (a.clockInTime || "-")}</td>
                       <td>{a.clockOut ? formatTimeByViewMode(a.clockOut) : (a.clockOutTime || "-")}</td>
                       <td>{a.locationIn ? <a target="_blank" rel="noreferrer" href={`https://maps.google.com/?q=${a.locationIn.latitude},${a.locationIn.longitude}`}>📍 View</a> : "-"}</td>
                       <td>{a.locationOut ? <a target="_blank" rel="noreferrer" href={`https://maps.google.com/?q=${a.locationOut.latitude},${a.locationOut.longitude}`}>📍 View</a> : "-"}</td>
                     </tr>
                   ))
-                }
+                )}
               </tbody>
             </table>
           </section>
-        )}
+       )}
 
         {/* My Leave & OT */}
         {activeSidebar === "my-leave" && (
@@ -5093,6 +5285,18 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         </div>
 
             <h3 style={{marginTop:16}}>My Leave Requests</h3>
+
+            <div className="myleave_table">
+            <input
+              type="month"
+              value={myLeaveMonth}
+              onChange={(e) => setMyLeaveMonth(e.target.value)}
+            />
+            <button className="btn" onClick={() => setMyLeaveMonth("")}>
+              Clear
+            </button>
+          </div>
+
             <table className="data-table">
               <thead>
               <tr>
@@ -5101,8 +5305,14 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             </thead>
 
               <tbody>
-                {leaves.length===0 ? <tr><td colSpan="5">No leave requests</td></tr> :
-                  leaves.map((lv) => (
+                {filteredMyLeaves.length === 0 ? (
+                    <tr>
+                      <td colSpan="8" style={{ textAlign: "center", padding: "20px" }}>
+                        No leave requests for this month.
+                      </td>
+                    </tr>
+                  ) : (
+                  filteredMyLeaves.map((lv) => (
                     <tr key={lv.id}>
                       <td>{lv.createdAt?.split("T")[0]}</td>
                       <td>{lv.startDate}</td>
@@ -5115,7 +5325,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                       <button
                         className="btn small"
                         disabled={lv.status !== "pending"}
-                       style={{
+                        style={{
                           opacity: lv.status !== "pending" ? 0.6 : 1,
                           cursor: lv.status !== "pending" ? "not-allowed" : "pointer",
                           color: "#000",
@@ -5131,7 +5341,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
 
                     </tr>
                   ))
-                }
+                )}
               </tbody>
             </table>
             {editingMyLeave && (
@@ -5249,20 +5459,43 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             </div>
 
             <h3 style={{marginTop:16}}>My Overtime Requests</h3>
+            <div className="myot_table">
+            <input
+              type="month"
+              value={myOtMonth}
+              onChange={(e) => setMyOtMonth(e.target.value)}
+            />
+            <button className="btn" onClick={() => setMyOtMonth("")}>
+              Clear
+            </button>
+          </div>
+
             <table className="data-table">
               <thead><tr><th>Date</th><th>Time</th><th>Total</th><th>Reason</th><th>Status</th></tr></thead>
               <tbody>
-                {overtimeReqs.length===0 ? <tr><td colSpan="5">No OT requests</td></tr> :
-                  overtimeReqs.map((ot) => (
-                    <tr key={ot.id}><td>{ot.date}</td><td>{ot.startTime} - {ot.endTime}</td><td>{ot.totalTime}</td><td>{ot.reason}</td><td>{colorStatus(ot.status)}</td></tr>
-                  ))
-                }
+              {filteredMyOvertime.length === 0 ? (
+              <tr>
+              <td colSpan="5" style={{ textAlign: "center", padding: "20px" }}>
+              No overtime requests for this month.
+              </td>
+              </tr>
+              ) : (
+              filteredMyOvertime.map((ot) => (
+              <tr key={ot.id}>
+              <td>{ot.date}</td>
+              <td>{ot.startTime} - {ot.endTime}</td>
+              <td>{ot.totalTime}</td>
+              <td>{ot.reason}</td>
+              <td>{colorStatus(ot.status)}</td>
+              </tr>
+              ))
+              )}
               </tbody>
             </table>
           </section>
-        )}
+      )}
 
-        {/* ---- P/O Report Section ---- */}
+       {/* ---- P/O Report Section ---- */}
         {activeSidebar === "my-po" && (
           <section className="card">
             <h2>My Permission Out (P/O) Report</h2>
@@ -5289,6 +5522,17 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                 <button  className="btn submit"  onClick={editingPo ? updatePoReport : addPoReport}>  {editingPo ? "Update P/O" : "Add P/O"}</button>
               </div>
 
+              <div className="myot_table">
+            <input
+              type="month"
+              value={myPOMonth}
+              onChange={(e) => setMyPOMonth(e.target.value)}
+            />
+            <button className="btn" onClick={() => setMyPOMonth("")}>
+              Clear
+            </button>
+          </div>
+
               <table className="data-table">
                 <thead>
                   <tr>
@@ -5303,12 +5547,14 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                   </tr>
                 </thead>
                 <tbody>
-                  {poList.length === 0 ? (
-                    <tr>
-                      <td colSpan="7">No P/O records</td>
-                    </tr>
-                  ) : (
-                    poList.map((p) => (
+              {filteredMyPO.length === 0 ? (
+              <tr>
+              <td colSpan="7" style={{ textAlign: "center", padding: "20px" }}>
+              No P/O requests for this month.
+              </td>
+              </tr>
+              ) : (
+              filteredMyPO.map((p) => (
                       <tr key={p.id}>
                         <td>{p.createdAt?.split("T")[0]}</td>
                         <td>{p.date}</td>
@@ -5342,8 +5588,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
 
         )}
 
-
-       {activeSidebar === "my-payslip" && (
+      {activeSidebar === "my-payslip" && (
         <section className="card">
           <h2>My Payslips</h2>
           <table className="data-table payslip">
@@ -5376,10 +5621,11 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             </tbody>
           </table>
         </section>
-      )}
+    )}
 
+    
       {/* LEADER SECTION */}
-    {isLeader  && activeSidebar === "member-att-panel" && (
+      {isLeader  && activeSidebar === "member-att-panel" && (
    <section className="card">
   <div className="section admin">
     <h2>My Members Attendance</h2>
@@ -5391,12 +5637,12 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         value={attendanceNameFilter}
         onChange={(e) => setAttendanceNameFilter(e.target.value)}
       />
-
-       <input
+      <input
         type="month"
         value={attendanceMonthFilter}
         onChange={(e) => setAttendanceMonthFilter(e.target.value)}
       />
+    
       <button className="btn" onClick={resetAttendanceFilters}>Reset</button>
     </div>
 
@@ -5404,7 +5650,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
     <table className="data-table">
       <thead><tr><th>User</th><th>Date</th><th>Clock In</th><th>Clock Out</th><th>In Loc</th><th>Out Loc</th><th>Action</th></tr></thead>
       <tbody>
-        {filteredMemberAttendance.length === 0 ? <tr><td colSpan="5">No records</td></tr> :
+        {filteredMemberAttendance.length === 0 ? <tr><td colSpan="7" style={{ textAlign: "center", padding: "20px" }}>No attendance records found for this month.</td></tr> :
           filteredMemberAttendance.map((at, i) => (
             <tr key={at.id}>
               <td>{displayUser(at.userId)}</td>
@@ -5489,17 +5735,17 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                 placeholder="Search by name"
                 value={leaveNameFilter}
                 onChange={(e) => setLeaveNameFilter(e.target.value)}
-               
+                
               />
               <div className="flex-date">
                <label>Start Date</label>
-             <input
-                type="date"
-                value={leaveFromDate}
-                onChange={(e) => setLeaveFromDate(e.target.value)}
-              />
-              </div>
-               <div className="flex-date">
+              <input
+                  type="date"
+                  value={leaveFromDate}
+                  onChange={(e) => setLeaveFromDate(e.target.value)}
+                />
+                </div>
+                <div className="flex-date">
                <label>End Date</label>
               <input
                 type="date"
@@ -5519,12 +5765,12 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
       </thead>
       <tbody>
         {filteredMemberLeaves.length === 0 ? (
-          <tr><td colSpan="8">No leave requests</td></tr>
+          <tr><td colSpan="9" style={{ textAlign: "center", padding: "20px" }}>No leave requests found for this month.</td></tr>
         ) : (
           filteredMemberLeaves.map((lv) => (
             <tr key={lv.id}>
               <td>{displayUser(lv.userId)}</td>
-               <td>{lv.createdAt?.split("T")[0]}</td>
+              <td>{lv.createdAt?.split("T")[0]}</td>
               <td>{lv.startDate}</td>
               <td>{lv.endDate}</td>
               <td>{lv.leaveName}</td>
@@ -5563,7 +5809,6 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         placeholder="Search by name"
         value={otNameFilter}
         onChange={(e) => setOtNameFilter(e.target.value)}
-       
       />
 
      <input
@@ -5582,7 +5827,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
       </thead>
       <tbody>
         {filteredMemberOT.length === 0 ? (
-          <tr><td colSpan="7">No overtime requests</td></tr>
+          <tr><td colSpan="7" style={{ textAlign: "center", padding: "20px" }}>No overtime requests found for this month.</td></tr>
         ) : (
           filteredMemberOT.map((ot) => (
             <tr key={ot.id}>
@@ -5602,7 +5847,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                   className="btn small red"
                   onClick={() => leaderUpdateOvertimeStatus(ot.id, "rejected", ot.userId)}
                 >❌</button>
-                </div>
+                 </div>
               </td>
             </tr>
           ))
@@ -5612,10 +5857,12 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
      </div>
   </section>
 )}
- 
+
+
+    
            
       {/* Admin Employee Management */}
-      {canAccessPayroll && isAdmin && activeSidebar === "admin-employee-form" && (
+      {isAdmin && activeSidebar === "admin-employee-form" && (
     <section className="card">
     <h2>Employee Information</h2>
 
@@ -5626,22 +5873,24 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         placeholder="Search by code, name, email, department..."
         value={empSearch}
         onChange={(e) => setEmpSearch(e.target.value)}
-       
+    
       />
       <button className="btn" onClick={() => setEmpSearch("")}>Clear</button>
       <button className="btn blue" onClick={openCreateEmployeeModal}>+ New Employee</button>
 
-      <label>Employement Status</label>
-      <select
-      value={employeeStatusFilter}
-      onChange={(e) => setEmployeeStatusFilter(e.target.value)}
-      >
-      <option value="active">Active</option>
-      <option value="resigned">Resigned</option>
-      <option value="all">All</option>
-      </select>
+    <label>Employement Status</label>
+    <select
+    value={employeeStatusFilter}
+    onChange={(e) => setEmployeeStatusFilter(e.target.value)}
+    >
+    <option value="active">Active</option>
+    <option value="resigned">Resigned</option>
+    <option value="all">All</option>
+    </select>
 
     </div>
+
+
 
     {/* Employee list (click row to edit) */}
     <div className="table-scroll">
@@ -5703,22 +5952,28 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
 
       {/* ---- YOUR FORM START ---- */}
       <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <label style={{ fontSize: 14 }}>Employee Code</label>
         <input
           placeholder="Employee Code"
           value={employeeForm.employeeCode}
           onChange={(e) => setEmployeeForm({ ...employeeForm, employeeCode: e.target.value })}
         />
+
+        <label style={{ fontSize: 14 }}>Employee Name</label>
         <input
           placeholder="Employee Name"
           value={employeeForm.employeeName}
           onChange={(e) => setEmployeeForm({ ...employeeForm, employeeName: e.target.value })}
         />
 
+        <label style={{ fontSize: 14 }}>Myanmar Name</label>
         <input
           placeholder="Myanmar Name"
           value={employeeForm.myanmarName}
           onChange={(e) => setEmployeeForm({ ...employeeForm, myanmarName: e.target.value })}
         />
+
+        <label style={{ fontSize: 14 }}>Gender</label>
         <select
           value={employeeForm.gender}
           onChange={(e) => setEmployeeForm({ ...employeeForm, gender: e.target.value })}
@@ -5728,108 +5983,151 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           <option value="Female">Female</option>
         </select>
 
+        
+        <label style={{ fontSize: 14 }}>Language Level</label>
+        <input
+          placeholder="Language Level"
+          value={employeeForm.languageLevel}
+          onChange={(e) => setEmployeeForm({ ...employeeForm, languageLevel: e.target.value })}
+        />
+
+        <label style={{ fontSize: 14 }}>Department</label>
         <input
           placeholder="Department"
           value={employeeForm.department}
           onChange={(e) => setEmployeeForm({ ...employeeForm, department: e.target.value })}
         />
+
+        <label style={{ fontSize: 14 }}>Designation</label>
         <input
           placeholder="Designation"
           value={employeeForm.designation}
           onChange={(e) => setEmployeeForm({ ...employeeForm, designation: e.target.value })}
         />
 
-       <input
+        <label style={{ fontSize: 12 }}>Rank</label>
+        <input
           placeholder="Rank"
           value={employeeForm.rank}
           onChange={(e) => setEmployeeForm({ ...employeeForm, rank: e.target.value })}
         />
+
+        <label style={{ fontSize: 12 }}>Pitch</label>
         <input
           placeholder="Pitch"
           value={employeeForm.pitch}
           onChange={(e) => setEmployeeForm({ ...employeeForm, pitch: e.target.value })}
         />
+
+        <label style={{ fontSize: 12 }}>Job Title Allowance</label>
         <input
           placeholder="Job Title Allowance"
           value={employeeForm.JobTitleAllowance}
           onChange={(e) => setEmployeeForm({ ...employeeForm, JobTitleAllowance: e.target.value })}
         />
+
+        <label style={{ fontSize: 12 }}>Director Allowance</label>
         <input
           placeholder="Director Allowance"
           value={employeeForm.DirectorAllowance}
           onChange={(e) => setEmployeeForm({ ...employeeForm, DirectorAllowance: e.target.value })}
         />
+
+        <label style={{ fontSize: 12 }}>Language Allowance</label>
          <input
-          placeholder="LanguageAllowance"
+          placeholder="Language Allowance"
           value={employeeForm.LanguageAllowance}
           onChange={(e) => setEmployeeForm({ ...employeeForm, LanguageAllowance: e.target.value })}
         />
-
-        {/* For edit mode, show Firestore email (profile) */}
+  
+         <label style={{ fontSize: 12 }}>Email</label>
         <input
           placeholder="Email"
           value={employeeForm.email}
           onChange={(e) => setEmployeeForm({ ...employeeForm, email: e.target.value })}
         />
 
-        <div>
-          <label style={{ fontSize: 12 }}>DOE</label>
+         <label style={{ fontSize: 12 }}>DOE</label>
           <input
             type="date"
             value={employeeForm.doe}
             onChange={(e) => setEmployeeForm({ ...employeeForm, doe: e.target.value })}
           />
-        </div>
-
-        <div>
+              
           <label style={{ fontSize: 12 }}>DOB</label>
           <input
             type="date"
             value={employeeForm.dob}
             onChange={(e) => setEmployeeForm({ ...employeeForm, dob: e.target.value })}
           />
-        </div>
 
+          <label>Role</label>
+          <select
+            value={employeeForm.role || "staff"}
+            onChange={(e) =>
+              setEmployeeForm({
+                ...employeeForm,
+                role: e.target.value,
+                roles: [e.target.value],
+              })
+            }
+          >
+            <option value="staff">Staff</option>
+            <option value="leader">Leader</option>
+            <option value="hr">HR</option>
+            <option value="admin">Admin</option>
+          </select>
+                
+        <label style={{ fontSize: 12 }}>Employment Type</label>
         <input
           placeholder="Employment Type"
           value={employeeForm.employmentType}
           onChange={(e) => setEmployeeForm({ ...employeeForm, employmentType: e.target.value })}
         />
 
+        <label style={{ fontSize: 12 }}>Probation Period</label>
         <input
           placeholder="Probation Period"
           value={employeeForm.probationPeriod}
           onChange={(e) => setEmployeeForm({ ...employeeForm, probationPeriod: e.target.value })}
         />
 
+        <label style={{ fontSize: 12 }}>Age</label>
         <input
           placeholder="Age"
           value={employeeForm.age}
           onChange={(e) => setEmployeeForm({ ...employeeForm, age: e.target.value })}
         />
 
+         <label style={{ fontSize: 12 }}>NRC</label>
         <input
           placeholder="NRC"
           value={employeeForm.nrc}
           onChange={(e) => setEmployeeForm({ ...employeeForm, nrc: e.target.value })}
         />
+
+         <label style={{ fontSize: 12 }}>Phone</label>
         <input
           placeholder="Phone"
           value={employeeForm.phone}
           onChange={(e) => setEmployeeForm({ ...employeeForm, phone: e.target.value })}
         />
 
+         <label style={{ fontSize: 12 }}>Address</label>
         <input
           placeholder="Address"
           value={employeeForm.address}
           onChange={(e) => setEmployeeForm({ ...employeeForm, address: e.target.value })}
         />
+
+         <label style={{ fontSize: 12 }}>Contact Address</label>
         <input
           placeholder="Contact Address"
           value={employeeForm.contactAddress}
           onChange={(e) => setEmployeeForm({ ...employeeForm, contactAddress: e.target.value })}
         />
 
+         <label style={{ fontSize: 12 }}>Marital Status</label>
         <select
           value={employeeForm.maritalStatus}
           onChange={(e) => setEmployeeForm({ ...employeeForm, maritalStatus: e.target.value })}
@@ -5840,30 +6138,31 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           <option value="Divorced">Divorced</option>
           <option value="Widowed">Widowed</option>
         </select>
-      
+
       </div>
+      
+      <div style={{position:"relative"}}>
+       
+      <div className="modal_leader">
+        <label style={{ marginBottom: "10px" }}>Type leader name... </label>
+        <input placeholder="Type leader name..."  value={leaderQueryInput} autoComplete="off"
+          onChange={(e) => {
+            setLeaderQueryInput(e.target.value);
+            setShowLeaderDropdown(true);
+          }}
+          onFocus={() => setShowLeaderDropdown(true)}
+        />
+     </div>
 
-      <div style={{ position: "relative",display:"flex",alignItems:"baseline" }}>
-      <label style={{ marginBottom: "10px" }}>Type leader name... </label>
-      <input
-      placeholder="Type leader name..."
-      value={leaderQueryInput}
-      autoComplete="off"
-      onChange={(e) => {
-        setLeaderQueryInput(e.target.value);
-        setShowLeaderDropdown(true);
-      }}
-      onFocus={() => setShowLeaderDropdown(true)}
-    />
+      {employeeForm.leaderId && (
+      <div style={{ marginTop: 6, fontSize: 13, color: "#333" }}>
+        Current leader: <b>{employeeById[employeeForm.leaderId]?.name || "Unknown"}</b>
+      </div>
+     )}
+    
 
-    {employeeForm.leaderId && (
-  <div style={{ marginTop: 6, fontSize: 13, color: "#333" }}>
-    Current leader: <b>{employeeById[employeeForm.leaderId]?.name || "Unknown"}</b>
-  </div>
-)}
-
-  {/* show dropdown based on INPUT, not leaderQuery */}
-   {showLeaderDropdown && leaderQueryInput.trim() && (
+    {/* show dropdown based on INPUT, not leaderQuery */}
+    {showLeaderDropdown && leaderQueryInput.trim() && (
     <div
       style={{
         position: "absolute",
@@ -5907,9 +6206,8 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         ))}
     </div>
   )}
-</div>
-        
-         <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+ </div>     
+        <div style={{ marginTop: 14,marginBottom: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         {/* ✅ Only show LOGIN EMAIL + TEMP PASSWORD when creating */}
         {!selectedEmpId && (
           <>
@@ -5942,7 +6240,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         )}
       </div>
 
-     <div style={{borderTop: 2,borderWidth:"2px",borderTopStyle:"solid",fontSize:"16",paddingTop:"20px"}}>For Resignation management</div>
+      <div style={{borderTop: 2,borderWidth:"2px",borderTopStyle:"solid",fontSize:"16",paddingTop:"20px"}}>For Resignation management</div>
       <div style={{ display: "flex", gap: 10, marginTop: 16, }} className="resign">
         <div className="form-group">
           <label>Last Working Day</label>
@@ -5960,8 +6258,8 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         <button className="btn red" type="button" onClick={markEmployeeResigned}>Mark Resigned</button>
         <button className="btn green" type="button" onClick={restoreEmployeeActive}>Restore Active</button>
       </div>
-
-     <div style={{ display: "flex", gap: 10, marginTop: 16, justifyContent: "flex-end" }}>
+      
+      <div style={{ display: "flex", gap: 10, marginTop: 16, justifyContent: "flex-end" }}>
         <button
           className="btn blue"
           onClick={async () => {
@@ -6018,12 +6316,6 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         <tr>
           <th>ID</th>
           <th>Name</th>
-          <th>Email</th>
-          <th>Role</th>
-          <th>Team</th>
-          <th>Position</th>
-          <th>JLPT</th>
-          {/* <th>Join Date</th> */}
           <th>Locations</th>
           <th>Action</th>
         </tr>
@@ -6037,12 +6329,6 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             <tr>
               <td>{emp.eid}</td>
               <td>{emp.name}</td>
-              <td>{emp.email}</td>
-              <td>{emp.role}</td>
-              <td>{emp.team}</td>
-              <td>{emp.position}</td>
-              <td>{emp.languageLevel}</td>
-              {/* <td>{emp.joinDate}</td> */}
               <td>
                 <div>
                   {emp.locations?.[0]?.name || "—"}
@@ -6052,203 +6338,121 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                 </div>
               </td>
               <td>
+                <div style={{ display: "flex", gap: 8}}>
                 <button
                   className="btn small"
-                  onClick={() =>
+                 /*  onClick={() =>
                     setEditingLocationsEmpId(
                       editingLocationsEmpId === emp.id ? null : emp.id
                     )
-                  }
+                  } */
+                 onClick={() => openLocationModal(emp)}
                 >
                   📍 Edit Locations
                 </button>
-                <div style={{ display: "flex", gap: 8,marginTop:8 }}>
-                <button
-                  className="btn small"
-                  onClick={() => setEditingEmp(emp)}
-                  
-                     >
-                  ✏ Edit
-                </button>
-                <button
+                  <button
                   className="btn small red"
                   onClick={() => deleteEmployee(emp.id)}
-                >
+                  >
                   🗑 Delete
                 </button>
-                </div>
+               </div>
               </td>
             </tr>
-
-            {/* INLINE LOCATION EDITOR */}
-            {editingLocationsEmpId === emp.id && (
-              <tr>
-                <td colSpan="10">
-                  <div
-                    style={{
-                      background: "#f9fafb",
-                      padding: 12,
-                      borderRadius: 8,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 10,
-                    }}
-                  >
-                    <b>📍 Edit Locations for {emp.name}</b>
-
-                    {/* Location 1 */}
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <input
-                        placeholder="Location 1 Name"
-                        value={emp.locations?.[0]?.name || ""}
-                        onChange={(e) => {
-                          const l = emp.locations || [{}, {}];
-                          l[0] = { ...l[0], name: e.target.value };
-                          setEmployees((prev) =>
-                            prev.map((x) =>
-                              x.id === emp.id ? { ...x, locations: l } : x
-                            )
-                          );
-                        }}
-                      />
-                      <input
-                        placeholder="Latitude"
-                        value={emp.locations?.[0]?.latitude || ""}
-                        onChange={(e) => {
-                          const l = emp.locations || [{}, {}];
-                          l[0] = {
-                            ...l[0],
-                            latitude: parseFloat(e.target.value),
-                          };
-                          setEmployees((prev) =>
-                            prev.map((x) =>
-                              x.id === emp.id ? { ...x, locations: l } : x
-                            )
-                          );
-                        }}
-                      />
-                      <input
-                        placeholder="Longitude"
-                        value={emp.locations?.[0]?.longitude || ""}
-                        onChange={(e) => {
-                          const l = emp.locations || [{}, {}];
-                          l[0] = {
-                            ...l[0],
-                            longitude: parseFloat(e.target.value),
-                          };
-                          setEmployees((prev) =>
-                            prev.map((x) =>
-                              x.id === emp.id ? { ...x, locations: l } : x
-                            )
-                          );
-                        }}
-                      />
-                    </div>
-
-                    {/* Location 2 */}
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <input
-                        placeholder="Location 2 Name"
-                        value={emp.locations?.[1]?.name || ""}
-                        onChange={(e) => {
-                          const l = emp.locations || [{}, {}];
-                          l[1] = { ...l[1], name: e.target.value };
-                          setEmployees((prev) =>
-                            prev.map((x) =>
-                              x.id === emp.id ? { ...x, locations: l } : x
-                            )
-                          );
-                        }}
-                      />
-                      <input
-                        placeholder="Latitude"
-                        value={emp.locations?.[1]?.latitude || ""}
-                        onChange={(e) => {
-                          const l = emp.locations || [{}, {}];
-                          l[1] = {
-                            ...l[1],
-                            latitude: parseFloat(e.target.value),
-                          };
-                          setEmployees((prev) =>
-                            prev.map((x) =>
-                              x.id === emp.id ? { ...x, locations: l } : x
-                            )
-                          );
-                        }}
-                      />
-                      <input
-                        placeholder="Longitude"
-                        value={emp.locations?.[1]?.longitude || ""}
-                        onChange={(e) => {
-                          const l = emp.locations || [{}, {}];
-                          l[1] = {
-                            ...l[1],
-                            longitude: parseFloat(e.target.value),
-                          };
-                          setEmployees((prev) =>
-                            prev.map((x) =>
-                              x.id === emp.id ? { ...x, locations: l } : x
-                            )
-                          );
-                        }}
-                      />
-                    </div>
-
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button
-                        className="btn blue"
-                        onClick={() => saveEmployeeLocations(emp)}
-                      >
-                        💾 Save Locations
-                      </button>
-                      <button
-                        className="btn"
-                        onClick={() => setEditingLocationsEmpId(null)}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                </td>
-              </tr>
-            )}
-
-          {editingEmp?.id === emp.id && (
-            <tr>
-            <td colSpan="10">
-            <div className="card" style={{ marginTop: 20 }}>
-              <h3>Edit Employee:  {emp.name}</h3>
-              <div className="form" style={{ flexWrap: "wrap", gap: 8 }}>
-                <input type="text" placeholder="ID" value={editingEmp.eid || ""} onChange={(e)=>setEditingEmp({...editingEmp,eid:e.target.value})}/>
-                <input type="text" placeholder="Name" value={editingEmp.name || ""} onChange={(e)=>setEditingEmp({...editingEmp,name:e.target.value})}/>
-                <input type="email" placeholder="Email" value={editingEmp.email || ""} onChange={(e)=>setEditingEmp({...editingEmp,email:e.target.value})}/>
-                <select placeholder="Role" value={editingEmp.role || "staff"} onChange={(e)=>setEditingEmp({...editingEmp,role:e.target.value})}>
-                  <option value="staff">Staff</option>
-                  <option value="admin">Admin</option>
-                  <option value="leader">Leader</option>
-                </select>
-                <input type="text" placeholder="team" value={editingEmp.team || ""} onChange={(e)=>setEditingEmp({...editingEmp,team:e.target.value})}/>
-                <input type="text" placeholder="position" value={editingEmp.position || ""} onChange={(e)=>setEditingEmp({...editingEmp,position:e.target.value})}/>
-                <input type="text" placeholder="languageLevel" value={editingEmp.languageLevel || ""} onChange={(e)=>setEditingEmp({...editingEmp,languageLevel:e.target.value})}/>
-                <input type="date" placeholder="joinDate" value={editingEmp.joinDate || ""} onChange={(e)=>setEditingEmp({...editingEmp,joinDate:e.target.value})}/>
-                <button className="btn blue" onClick={updateEmployee}>💾 Save</button>
-                <button className="btn red" onClick={()=>setEditingEmp(null)}>✖ Cancel</button>
-              </div>
-            </div>
-            </td>
-            </tr>
-          )}
-
           </React.Fragment>
-        ))}
-      </tbody>
+            )) }
+        </tbody>
     </table>
 
-    
-  </section>
-)}
+     {showLocationModal && locationEditEmp && (
+          <div
+          className="modal-backdrop"
+          onClick={() => {
+          setShowLocationModal(false);
+          setLocationEditEmp(null);
+          }}
+          >
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <h2>Edit Locations</h2>
+          <h3>📍 {locationEditEmp.name}</h3>
 
-      {isAdmin && activeSidebar === "admin-gps-setting" && (
+          <div className="form">
+          {[0, 1].map((idx) => (
+          <React.Fragment key={idx}>
+          <label>Location {idx + 1} Name</label>
+          <input
+            value={locationEditEmp.locations?.[idx]?.name || ""}
+            onChange={(e) => {
+              const locations = [...locationEditEmp.locations];
+              locations[idx] = { ...locations[idx], name: e.target.value };
+              setLocationEditEmp({ ...locationEditEmp, locations });
+            }}
+          />
+
+          <label>Latitude</label>
+          <input
+            value={locationEditEmp.locations?.[idx]?.latitude || ""}
+            onChange={(e) => {
+              const locations = [...locationEditEmp.locations];
+              locations[idx] = { ...locations[idx], latitude: e.target.value };
+              setLocationEditEmp({ ...locationEditEmp, locations });
+            }}
+          />
+
+          <label>Longitude</label>
+          <input
+            value={locationEditEmp.locations?.[idx]?.longitude || ""}
+            onChange={(e) => {
+              const locations = [...locationEditEmp.locations];
+              locations[idx] = { ...locations[idx], longitude: e.target.value };
+              setLocationEditEmp({ ...locationEditEmp, locations });
+            }}
+          />
+          </React.Fragment>
+          ))}
+          </div>
+
+          <div style={{ display: "flex", gap: 10, marginTop: 16, justifyContent: "flex-end" }}>
+          <button
+          className="btn blue"
+          onClick={async () => {
+          const payload = {
+            ...locationEditEmp,
+            locations: locationEditEmp.locations.map((loc) => ({
+              name: loc.name || "",
+              latitude: Number(loc.latitude || 0),
+              longitude: Number(loc.longitude || 0),
+            })),
+          };
+
+          await saveEmployeeLocations(payload);
+          await loadEmployees();
+
+          setShowLocationModal(false);
+          setLocationEditEmp(null);
+          }}
+          >
+          💾 Save Locations
+          </button>
+
+          <button
+          className="btn red"
+          onClick={() => {
+          setShowLocationModal(false);
+          setLocationEditEmp(null);
+          }}
+          >
+          Cancel
+          </button>
+          </div>
+          </div>
+          </div>
+          )}
+    
+    </section>
+  )}
+
+  {isAdmin && activeSidebar === "admin-gps-setting" && (
   <section className="card">
     <h2>Staff GPS Setting</h2>
 
@@ -6329,227 +6533,233 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
   </section>
 )}
 
-        {isAdmin && activeSidebar === "admin-company-calendar" && (
-        <section className="card">
-        <h2>Company Calendar (Holidays)</h2>
+          {isAdmin && activeSidebar === "admin-company-calendar" && (
+          <section className="card">
+          <h2>Company Calendar (Holidays)</h2>
 
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <label style={{ fontWeight: 600 }}>Month:</label>
-        <input type="month" value={holidayMonth} onChange={(e) => setHolidayMonth(e.target.value)} />
-
-        <input type="date" value={holidayDate} onChange={(e) => setHolidayDate(e.target.value)} />
-        <input
-          type="text"
-          placeholder="Holiday name"
-          value={holidayName}
-          onChange={(e) => setHolidayName(e.target.value)}
-          style={{ minWidth: 240 }}
-        />
-        <button className="btn blue" onClick={adminAddOrUpdateHoliday}>💾 Save Holiday</button>
-        </div>
-
-        <div style={{ marginTop: 14 }}>
-        <table className="data-table">
-          <thead>
-            <tr><th>Date</th><th>Name</th><th>Action</th></tr>
-          </thead>
-          <tbody>
-            {companyHolidays.length === 0 ? (
-              <tr><td colSpan="3">No holidays in this month.</td></tr>
-            ) : (
-              companyHolidays.map((h) => (
-                <tr key={h.id}>
-                  <td style={{ color: "red", fontWeight: 700 }}>{h.date}</td>
-                  <td style={{ color: "red", fontWeight: 700 }}>{h.name}</td>
-                  <td>
-                    <button className="btn small red" onClick={() => adminDeleteHoliday(h.id)}>🗑 Delete</button>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-        </div>
-        </section>
-        )}
-
-
-        {isAdmin && activeSidebar === "admin-att-overview" && (
-        <section className="card">
-        <h2>Attendance Overview (Calendar)</h2>
-
-        <div className="card" style={{ marginBottom: 16 }}>
-        <h3>Add Leave for Staff</h3>
-
-        <div className="form" style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        <div className="form-group">
-        <label>Staff</label>
-        <select
-        value={overviewLeaveUserId}
-        onChange={(e) => setOverviewLeaveUserId(e.target.value)}
-        >
-        <option value="">Select staff</option>
-        {Object.values(usersMap)
-        .sort((a, b) => (a.eid || "").localeCompare(b.eid || ""))
-        .map((u) => (
-          <option key={u.id} value={u.id}>
-            {(u.eid || "-")} - {u.name || u.email}
-          </option>
-        ))}
-        </select>
-        </div>
-
-        <div className="form-group">
-        <label>Start Date</label>
-        <input
-        type="date"
-        value={overviewLeaveStart}
-        onChange={(e) => setOverviewLeaveStart(e.target.value)}
-        />
-        </div>
-
-        <div className="form-group">
-        <label>End Date</label>
-        <input
-        type="date"
-        value={overviewLeaveEnd}
-        onChange={(e) => setOverviewLeaveEnd(e.target.value)}
-        />
-        </div>
-
-        <div className="form-group">
-        <label>Leave Type</label>
-        <select
-        value={overviewLeaveType}
-        onChange={(e) => setOverviewLeaveType(e.target.value)}
-        >
-        <option>Full Day</option>
-        <option>Morning Half</option>
-        <option>Evening Half</option>
-        </select>
-        </div>
-
-        <div className="form-group">
-        <label>Leave Name</label>
-        <select
-        value={overviewLeaveName}
-        onChange={(e) => setOverviewLeaveName(e.target.value)}
-        >
-        <option>Casual Leave</option>
-        <option>Annual Leave</option>
-        <option>Medical Leave</option>
-        <option>WithoutPay Leave</option>
-        <option>Maternity Leave</option>
-        </select>
-        </div>
-
-        <div className="form-group" style={{ minWidth: 220 }}>
-        <label>Reason</label>
-        <input
-        type="text"
-        value={overviewLeaveReason}
-        onChange={(e) => setOverviewLeaveReason(e.target.value)}
-        placeholder="Reason"
-        />
-        </div>
-
-        <div className="form-group" style={{ alignSelf: "flex-end" }}>
-        <button className="btn submit" onClick={adminCreateLeaveForStaff}>
-        Add Leave
-        </button>
-        </div>
-        </div>
-         </div>
-
-        <div className="att_overview">
-          <div className="att_overview_flex w18">
-            <label style={{ fontWeight: 600 }}>Month:</label>
-            <input type="month" value={overviewMonth} onChange={(e) => setOverviewMonth(e.target.value)} />
-        </div>
-          <div className="att_overview_flex w60">
-            <label style={{ fontWeight: 600 }}>Staff:</label>
-            <select value={overviewUserId} onChange={(e) => setOverviewUserId(e.target.value)} style={{ width: "93%" }}>
-            <option value="">-- Select staff --</option>
-            {Object.keys(usersMap || {})
-              .sort((a, b) => (usersMap[a]?.eid || "").localeCompare(usersMap[b]?.eid || ""))
-              .map((uid) => (
-                <option key={uid} value={uid}>
-                  {(usersMap[uid]?.eid || "-")} - {(usersMap[uid]?.name || usersMap[uid]?.email || uid)}
-                </option>
-              ))}
-            </select>
+          <div className="company_cal">
+            <div>
+          <label style={{ fontWeight: 600 }}>Month:</label>
+          <input type="month" value={holidayMonth} onChange={(e) => setHolidayMonth(e.target.value)} />
+          </div>
+          <div>
+          <label style={{ fontWeight: 600 }}>Select Holiday Date:</label>
+          <input type="date" value={holidayDate} onChange={(e) => setHolidayDate(e.target.value)} />
+          </div>
+          <div>
+          <label style={{ fontWeight: 600 }}>Type Holiday Name:</label>
+          <input
+            type="text"
+            placeholder="Holiday name"
+            value={holidayName}
+            onChange={(e) => setHolidayName(e.target.value)}
+            style={{ minWidth: 240 }}
+          />
+          </div>
+         <button className="btn blue" onClick={adminAddOrUpdateHoliday} style={{ marginTop: 20 }}>💾 Save Holiday</button>
           </div>
 
-        <div className="att_overview_flex w20">
-            <button className="btn" onClick={() => { setOverviewUserId(""); setOverviewMonth(attendanceMonth || overviewMonth); }}>
-              Clear
-            </button>
-            <button
-              className="btn blue"
-              disabled={!overviewUserId}
-              style={{ opacity: !overviewUserId ? 0.6 : 1, cursor: !overviewUserId ? "not-allowed" : "pointer" }}
-              onClick={() => {
-                if (!overviewUserId) return;
-                openCreateAttendance(overviewUserId);
-              }}
+          <div style={{ marginTop: 14 }}>
+          <table className="calendar data-table">
+            <thead>
+              <tr><th>Date</th><th>Name</th><th>Action</th></tr>
+            </thead>
+            <tbody>
+              {companyHolidays.length === 0 ? (
+                <tr><td>No holidays in this month.</td></tr>
+              ) : (
+                companyHolidays.map((h) => (
+                  <tr key={h.id}>
+                    <td style={{ color: "red", fontWeight: 700 }}>{h.date}</td>
+                    <td style={{ color: "red", fontWeight: 700 }}>{h.name}</td>
+                    <td>
+                      <button className="btn small red" onClick={() => adminDeleteHoliday(h.id)}>🗑 Delete</button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+          </div>
+          </section>
+          )}
+
+
+          {isAdmin && activeSidebar === "admin-att-overview" && (
+          <section className="card">
+          <h2>Attendance Overview (Calendar)</h2>
+
+            <div className="card" style={{ marginBottom: 16 }}>
+            <h3>Add Leave for Staff</h3>
+
+            <div className="form" style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <div className="form-group">
+            <label>Staff</label>
+            <select
+            value={overviewLeaveUserId}
+            onChange={(e) => setOverviewLeaveUserId(e.target.value)}
             >
-              ➕ Add Attendance
+            <option value="">Select staff</option>
+            {Object.values(usersMap)
+            .sort((a, b) => (a.eid || "").localeCompare(b.eid || ""))
+            .map((u) => (
+              <option key={u.id} value={u.id}>
+                {(u.eid || "-")} - {u.name || u.email}
+              </option>
+            ))}
+            </select>
+            </div>
+
+            <div className="form-group">
+            <label>Start Date</label>
+            <input
+            type="date"
+            value={overviewLeaveStart}
+            onChange={(e) => setOverviewLeaveStart(e.target.value)}
+            />
+            </div>
+
+            <div className="form-group">
+            <label>End Date</label>
+            <input
+            type="date"
+            value={overviewLeaveEnd}
+            onChange={(e) => setOverviewLeaveEnd(e.target.value)}
+            />
+            </div>
+
+            <div className="form-group">
+            <label>Leave Type</label>
+            <select
+            value={overviewLeaveType}
+            onChange={(e) => setOverviewLeaveType(e.target.value)}
+            >
+            <option>Full Day</option>
+            <option>Morning Half</option>
+            <option>Evening Half</option>
+            </select>
+            </div>
+
+            <div className="form-group">
+            <label>Leave Name</label>
+            <select
+            value={overviewLeaveName}
+            onChange={(e) => setOverviewLeaveName(e.target.value)}
+            >
+            <option>Casual Leave</option>
+            <option>Annual Leave</option>
+            <option>Medical Leave</option>
+            <option>WithoutPay Leave</option>
+            <option>Maternity Leave</option>
+            </select>
+            </div>
+
+            <div className="form-group" style={{ minWidth: 220 }}>
+            <label>Reason</label>
+            <input
+            type="text"
+            value={overviewLeaveReason}
+            onChange={(e) => setOverviewLeaveReason(e.target.value)}
+            placeholder="Reason"
+            />
+            </div>
+
+            <div className="form-group" style={{ alignSelf: "flex-end" }}>
+            <button className="btn submit" onClick={adminCreateLeaveForStaff}>
+            Add Leave
             </button>
+            </div>
+            </div>
+            </div>
+
+          <div className="att_overview">
+            <div className="att_overview_flex w18">
+              <label style={{ fontWeight: 600 }}>Month:</label>
+              <input type="month" value={overviewMonth} onChange={(e) => setOverviewMonth(e.target.value)} />
+            </div>
+            <div className="att_overview_flex w60">
+              <label style={{ fontWeight: 600 }}>Staff:</label>
+              <select value={overviewUserId} onChange={(e) => setOverviewUserId(e.target.value)}>
+                <option value="">-- Select staff --</option>
+                {Object.keys(usersMap || {})
+                  .sort((a, b) => (usersMap[a]?.eid || "").localeCompare(usersMap[b]?.eid || ""))
+                  .map((uid) => (
+                    <option key={uid} value={uid}>
+                      {(usersMap[uid]?.eid || "-")} - {(usersMap[uid]?.name || usersMap[uid]?.email || uid)}
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            <div className="att_overview_flex w20">
+              <button className="btn" onClick={() => { setOverviewUserId(""); setOverviewMonth(attendanceMonth || overviewMonth); }}>
+                Clear
+              </button>
+              <button
+                className="btn blue"
+                disabled={!overviewUserId}
+                style={{ opacity: !overviewUserId ? 0.6 : 1, cursor: !overviewUserId ? "not-allowed" : "pointer" }}
+                onClick={() => {
+                  if (!overviewUserId) return;
+                  openCreateAttendance(overviewUserId);
+                }}
+              >
+                ➕ Add Attendance
+              </button>
+            </div>
           </div>
-          </div>
 
-        {!overviewUserId ? (
-        <div>Please select a staff.</div>
-        ) : (
-        <div>
-        <div className="calendar-grid calendar-card">
-          {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d) => (
-            <div key={d} className="pc_dayname">{d}</div>
-          ))}
+          {!overviewUserId ? (
+          <div>Please select a staff.</div>
+          ) : (
+          <div>
+            <div className="calendar-grid calendar-card">
+              {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d) => (
+                <div key={d} className="pc_dayname">{d}</div>
+              ))}
 
-            {buildCalendarCells(overviewMonth).map((dateStr, idx) => {
-              if (!dateStr) return <div key={idx} style={{ minHeight: 92 }} />;
+                {buildCalendarCells(overviewMonth).map((dateStr, idx) => {
+                  if (!dateStr) return <div key={idx} />;
 
-              const weekday = new Date(dateStr + "T00:00:00").getDay(); // ✅ stable
-              const isWeekend = weekday === 0 || weekday === 6;
-              const isHoliday = !!holidayMap[dateStr];
-              const isRedDay = isWeekend || isHoliday;
-               const dayName = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][weekday];
+                  const weekday = new Date(dateStr + "T00:00:00").getDay(); // ✅ stable
+                  const isWeekend = weekday === 0 || weekday === 6;
+                  const isHoliday = !!holidayMap[dateStr];
+                  const isRedDay = isWeekend || isHoliday;
+                  const dayName = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][weekday];
 
-              const att = findAttendanceByUserAndDate(overviewUserId, dateStr);
-              const leaveAbbr = getLeaveAbbreviationForDate(overviewUserId, dateStr) || "";
+                  const att = findAttendanceByUserAndDate(overviewUserId, dateStr);
+                  const leaveAbbr = getLeaveAbbreviationForDate(overviewUserId, dateStr) || "";
 
-              return (
-                <div
-                  key={dateStr}
-                  style={{
-                    border: "1px solid #e5e7eb",
-                    borderRadius: 10,
-                    padding: 10,
-                    minHeight: 92,
-                    background: isHoliday ? "#fecaca" : isWeekend ? "#fef2f2" : "white"
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-
-                     <div style={{ fontWeight: 900, color: isRedDay ? "#b91c1c" : "inherit" }}>
+                  return (
+                    <div
+                      key={dateStr}
+                      style={{
+                        border: "2px solid #e5e7eb",
+                        borderRadius: 10,
+                        padding: 10,
+                        background: isHoliday ? "#fecaca" : isWeekend ? "#fef2f2" : "white"
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                                            
+                        <div style={{ fontWeight: 900, color: isRedDay ? "#b91c1c" : "inherit" }}>
                           <span className="weekday-mobile">{dayName}</span>
                           {dateStr}
+                        </div>
+
+                        {leaveAbbr ? (
+                          <div style={{ fontWeight: 900, color: "#d97706" }}>{leaveAbbr}</div>
+                        ) : null}
                       </div>
 
-                    {leaveAbbr ? (
-                      <div style={{ fontWeight: 900, color: "#d97706" }}>{leaveAbbr}</div>
-                    ) : null}
-                  </div>
+                      {isHoliday && (
+                        <div style={{ marginTop: 6, color: "#b91c1c", fontWeight: 700, fontSize: 12 }}>
+                          <img src="https://flagcdn.com/16x12/mm.png" srcset="https://flagcdn.com/32x24/mm.png 2x, https://flagcdn.com/48x36/mm.png 3x"width="16"height="12"  alt="Myanmar"/> {holidayMap[dateStr]?.name}
+                        </div>
+                      )}
 
-                  {isHoliday && (
-                    <div style={{ marginTop: 6, color: "#b91c1c", fontWeight: 700, fontSize: 12 }}>
-                      <img src="https://flagcdn.com/16x12/mm.png" srcset="https://flagcdn.com/32x24/mm.png 2x, https://flagcdn.com/48x36/mm.png 3x"width="16"height="12"  alt="Myanmar"/> {holidayMap[dateStr]?.name}
-                    </div>
-                  )}
-
-                   <div style={{ marginTop: 8, fontSize: 13 }}>
-                       
+                      <div style={{ marginTop: 8, fontSize: 13 }}>
+                        
                         <div>
                         <strong>In:</strong>{" "}
                         {att?.clockIn
@@ -6564,7 +6774,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                       </div>
                       </div>
 
-                  <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
+                      <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
                         <button
                           className="btn small blue"
                           onClick={() => {
@@ -6577,16 +6787,16 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                         >
                           {att ? "✏ Edit" : "➕ Add"}
                         </button>
-                  </div>
-
-                </div>
-              );
-            })}
+                      </div>
+                      
                     </div>
-                  </div>
-                )}
-          </section>
-        )}
+                  );
+                })}
+              </div>
+            </div>
+                    )}
+              </section>
+            )}
 
         {/* ADMIN: All Attendance */}
         {isAdmin && activeSidebar==="admin-att" && (
@@ -6594,24 +6804,24 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             <h2>All Staff Attendance</h2>
             <div className="staff_att_container">
             <div className="staff_att_UI">
-            <input
-              placeholder="Search by employee ID, name, email, date..."
-              value={attendanceSearch}
-              onChange={(e) => setAttendanceSearch(e.target.value)}
-            />
-            <input
-              type="month"
-              value={attendanceMonth}
-              onChange={(e) => setAttendanceMonth(e.target.value)}
+              <input
+                placeholder="Search by employee ID, name, email, date..."
+                value={attendanceSearch}
+                onChange={(e) => setAttendanceSearch(e.target.value)}
+              />
+              <input type="month"
+                value={attendanceMonth}
+                onChange={(e) => setAttendanceMonth(e.target.value)}
+              
+              />
+              <button className="btn" onClick={() => setAttendanceSearch("")}>Clear</button>
 
-            />
-            <button className="btn" onClick={() => setAttendanceSearch("")}>Clear</button>
+              <button className="btn blue" onClick={() => openCreateAttendance ()}> ➕ Add Attendance</button>
+          
+            </div>
 
-            <button className="btn blue" onClick={() => openCreateAttendance ()}> ➕ Add Attendance</button>
-
-          </div>
-
-           </div>
+           
+            </div>
 
             <table className="data-table">
               <thead>
@@ -6638,7 +6848,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                       {/* <td>{usersMap[a.userId] || a.userId}</td> */}
                        <td style={{ fontWeight: 700 }}>{getEid(a.userId) || "-"}</td>
                        <td>{usersMap[a.userId]?.name || usersMap[a.userId]?.email || a.userId}</td>
-                        <td style={{ fontWeight: 700, color: "#d97706" }}>
+                      <td style={{ fontWeight: 700, color: "#d97706" }}>
                         {getLeaveAbbreviationForDate(a.userId, a.date) || "—"}
                       </td>
                       <td>{a.date}</td>
@@ -6647,7 +6857,8 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                       <td>{a.locationIn ? <a href={`https://maps.google.com/?q=${a.locationIn.latitude},${a.locationIn.longitude}`} target="_blank" rel="noreferrer">📍 View</a> : "-"}</td>
                       <td>{a.locationOut ? <a href={`https://maps.google.com/?q=${a.locationOut.latitude},${a.locationOut.longitude}`} target="_blank" rel="noreferrer">📍 View</a> : "-"}</td>
                       <td>
-                     <button className="btn small blue" onClick={() => openEditAttendance(a)}>
+                      <button className="btn small blue" onClick={() => openEditAttendance(a)}>
+
                         ✏ Edit
                       </button>
                       </td>
@@ -6657,7 +6868,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                 }
               </tbody>
             </table>
-             </section>
+            </section>
         )}
 
             {editingAttendance && (
@@ -6713,7 +6924,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                     {/* Staff select */}
                     <div>
                        <label style={{ fontWeight: 600 }}>Select employee</label>
-                       <select value={selectedUserId} onChange={(e) => setSelectedUserId(e.target.value)}>
+                      <select value={selectedUserId} onChange={(e) => setSelectedUserId(e.target.value)}>
                       <option value="">Select employee</option>
                       {Object.keys(usersMap)
                         .sort((a, b) => (usersMap[a]?.eid || "").localeCompare(usersMap[b]?.eid || ""))
@@ -6763,11 +6974,12 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             
                   </div>
                 </div>
-              )}
+            
+        )}
 
-           {isAdmin && activeSidebar==="admin-att-summary" && (
+         {isAdmin && activeSidebar==="admin-att-summary" && (
             <section className="card" style={{ marginTop: 18 }}>
-              <h2>Monthly Attendance Summary</h2>
+              <h2>Monthly Attendance Summary </h2>
 
               <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
                 <label style={{ fontWeight: 600 }}>Month:</label>
@@ -6811,10 +7023,48 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           )}
 
 
-       {/* ---- Admin: All Staff P/O Reports ---- */}
+        {/* ---- Admin: All Staff P/O Reports ---- */}
         {isAdmin && activeSidebar === "admin-po" && (
           <section className="card">
             <h2>All Staff P/O Reports</h2>
+
+            <div className="all_po_req">
+              <input
+                placeholder="Search by name"
+                value={poSearch}
+                onChange={(e) => setPoSearch(e.target.value)}
+              />
+
+              <select
+                value={poDeptFilter}
+                onChange={(e) => setPoDeptFilter(e.target.value)}
+              >
+                <option value="">All Departments</option>
+                {departments.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+
+              <input
+                type="month"
+                value={poMonthFilter}
+                onChange={(e) => setPoMonthFilter(e.target.value)}
+              />
+
+              <button
+                className="btn"
+                onClick={() => {
+                  setPoSearch("");
+                  setPoDeptFilter("");
+                  setPoMonthFilter(getCurrentMonth());
+                }}
+              >
+                Reset
+              </button>
+            </div>
+
             <table className="data-table">
               <thead>
                 <tr>
@@ -6829,11 +7079,11 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                 </tr>
               </thead>
               <tbody>
-                {allPoList.length === 0 ? (
+                {filteredAllPoReports.length === 0 ? (
                   <tr><td colSpan="5">No P/O records found.</td></tr>
                 ) : (
-                  allPoList.map((p) => (
-                    <tr key={p.id} style={{
+                  filteredAllPoReports.map((p) => (
+                  <tr key={p.id} style={{
                     color: isResignedHistoricalRow(p.userId, p.date) ? "#dc2626" : "inherit",
                     fontWeight: isResignedHistoricalRow(p.userId, p.date) ? 700 : 400,
                   }}>
@@ -6887,7 +7137,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           <section className="card">
             <h2>All Staff Leave Requests</h2>
 
-            <div className="filters all_leave_req">
+             <div className="filters all_leave_req">
               <input
                 type="text"
                 placeholder="Search by name"
@@ -6906,7 +7156,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                 ))}
               </select>
               <div className="flex-date">
-               <label>Start Date</label>
+                <label>Start Date</label>
                 <input
                     type="date"
                     value={fromDate}
@@ -6914,15 +7164,15 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                   />
               </div>
               <div className="flex-date">
-               <label>End Date</label>
-              <input
-                type="date"
-                value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-              />
+                  <label>End Date</label>
+                  <input
+                    type="date"
+                    value={toDate}
+                    onChange={(e) => setToDate(e.target.value)}
+                  />
               </div>
-               <div style={{ display: "flex", gap: 12, alignItems: "center", justifyContent:"center",marginBottom:20  }}>
-              <label style={{ display: "flex", alignItems: "center" }}>
+              <div style={{ display: "flex", gap: 12, alignItems: "center",justifyContent:"center",marginBottom:20 }}>
+              <label style={{ display: "flex",alignItems: "center" }}>
                 <input
                   type="checkbox"
                   checked={showApprovedLeave}
@@ -6940,13 +7190,12 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                 Rejected
               </label>
             </div>
-
               <button className="btn" onClick={resetFilters}>Reset</button>
             </div>
-            
+
             <table className="data-table">
               <thead>
-               <tr>
+              <tr>
                 <th>User</th>
                 <th>Apply<br></br>Date</th>
                 <th>Leave<br></br>Start</th>
@@ -6960,31 +7209,32 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                 <th>Action</th>
               </tr>
             </thead>
+
               <tbody>
                 {filteredAllMemberLeaves.length===0 ? <tr><td colSpan="10">No leave requests</td></tr> :
                   filteredAllMemberLeaves.map((lv) => (
+                    
                     <tr key={lv.id} style={{
-                      color: isResignedHistoricalRow(lv.userId, lv.date) ? "#dc2626" : "inherit",
-                      fontWeight: isResignedHistoricalRow(lv.userId, lv.date) ? 700 : 400,
-                     }}>
+                    color: isResignedHistoricalRow(lv.userId, lv.date) ? "#dc2626" : "inherit",
+                    fontWeight: isResignedHistoricalRow(lv.userId, lv.date) ? 700 : 400,
+                  }}>
                      {/*  <td>{usersMap[lv.userId] || lv.userId}</td> */}
                      <td>{displayUser(lv.userId)}</td>
-                      <td>{lv.createdAt?.split("T")[0]}</td>
+                     <td>{lv.createdAt?.split("T")[0]}</td>
                       <td>{lv.startDate}</td>
                       <td>{lv.endDate}</td>
                       <td>{lv.leaveType}</td>
                       <td>{lv.leaveName}</td>
                       <td>{lv.reason}</td>
-                       <td>{lv.leaderActionBy ? displayUser(lv.leaderActionBy) : "-"}</td>
-                      {/* <td>{lv.adminActionBy ? displayUser(lv.adminActionBy) : "-"}</td> */}
+                      <td>{lv.leaderActionBy ? displayUser(lv.leaderActionBy) : "-"}</td>
+                     {/*  <td>{lv.adminActionBy ? displayUser(lv.adminActionBy) : "-"}</td> */}
                       <td>{colorStatus(lv.status)}</td>
                       <td>
                         <div style={{ display: "flex", justifyContent: "start", gap: "2px" }}>
-                          
                           <button className="btn small" onClick={() => adminUpdateLeaveStatus(lv.id, "approved", lv)}>✅</button>
                           <button className="btn small red" onClick={() => adminUpdateLeaveStatus(lv.id, "rejected", lv)}>❌</button>
 
-                            <button
+                          <button
                             className="btn small blue"
                              onClick={() => {
                               
@@ -7004,6 +7254,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                           >
                             🗑️
                           </button>
+
 
                         </div>
                       </td>
@@ -7067,7 +7318,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
 
          {/* ---- Admin: all staff leave balance edit ---- */}
         {isAdmin && activeSidebar === "admin-leave-balance" && (
-        <section className="card">
+            <section className="card">
         <h2>All Staff Leave Balance Management ({currentYear})</h2>
 
         {/* Search */}
@@ -7127,7 +7378,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                     {/* Leave list (your sketch) */}
                     <td>
                       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                        {LEAVE_TYPES.map((t) => {
+                          {LEAVE_TYPES.map((t) => {
                           const base = getBal(uid, t.key, "base");
                           const carry = t.hasCarry ? getBal(uid, t.key, "carry") : 0;
                           const allowance = Number(base) + Number(carry);
@@ -7323,41 +7574,38 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           <section className="card">
             <h2>All Overtime Requests</h2>
 
-             <div className="filters all_ot_req">
+            <div className="filters all_ot_req">
                 <input
                   type="text"
                   placeholder="Search by name"
                   value={nameFilter}
                   onChange={(e) => setNameFilter(e.target.value)}
-                 
                 />
-                 <input
+                <input
                   type="date"
                   value={dateFilter}
                   onChange={(e) => setDateFilter(e.target.value)}
                 />
-                <div style={{ display: "flex", gap: 12, alignItems: "center",justifyContent:"center",marginBottom:20  }}>
-                  <label style={{ display: "flex", alignItems: "center" }}>
-                    <input
-                      type="checkbox"
-                      checked={showApprovedOT}
-                      onChange={(e) => setShowApprovedOT(e.target.checked)}
-                    />
-                    Approved
-                  </label>
+            <div style={{ display: "flex", gap: 12, alignItems: "center",justifyContent:"center",marginBottom:20 }}>
+              <label style={{ display: "flex", alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={showApprovedOT}
+                  onChange={(e) => setShowApprovedOT(e.target.checked)}
+                />
+                Approved
+              </label>
 
-                  <label style={{ display: "flex", alignItems: "center" }}>
-                    <input
-                      type="checkbox"
-                      checked={showRejectedOT}
-                      onChange={(e) => setShowRejectedOT(e.target.checked)}
-                    />
-                    Rejected
-                  </label>
-                 </div>
-
-               
-                <button className="btn" onClick={resetFilters}>Reset</button>
+              <label style={{ display: "flex",alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={showRejectedOT}
+                  onChange={(e) => setShowRejectedOT(e.target.checked)}
+                />
+                Rejected
+              </label>
+            </div>
+              <button className="btn" onClick={resetFilters}>Reset</button>
               </div>
 
             <table className="data-table">
@@ -7388,6 +7636,8 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                         >
                           🗑️
                         </button>
+
+
                         </div>
                       </td>
                     </tr>
@@ -7397,6 +7647,8 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             </table>
           </section>
         )}
+
+      
 
         {/* ADMIN: Summary */}
         {isAdmin && activeSidebar==="admin-summary" && (
@@ -7419,12 +7671,12 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         {canAccessPayroll && isAdmin && activeSidebar === "admin-payroll" && (
           <section className="card">
             <h2>Payroll Calculator</h2>
-             <PayrollCalculator usersMap={usersMap} employees={employees} />
+            <PayrollCalculator usersMap={usersMap} employees={employees} />
           </section>
         )} 
 
 
-       {canAccessPayroll && isAdmin && activeSidebar === "admin-payroll-summary" && (
+  {canAccessPayroll && isAdmin && activeSidebar === "admin-payroll-summary" && (
   <section className="card">
     <h2>Payroll Summary</h2>
 
@@ -7684,16 +7936,12 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
   <section className="card">
     <h2>Export Excel</h2>
 
-    <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+    <div className="export_excel" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
       <label style={{ fontWeight: 700 }}>Month:</label>
       <input type="month" value={exportMonth} onChange={(e) => setExportMonth(e.target.value)} />
 
       <label style={{ fontWeight: 700 }}>Staff:</label>
-      <select
-        value={exportUserId}
-        onChange={(e) => setExportUserId(e.target.value)}
-        style={{ minWidth: 260 }}
-      >
+      <select value={exportUserId} onChange={(e) => setExportUserId(e.target.value)}>
         <option value="">-- All / Use search --</option>
 
         {Object.entries(usersMap || {})
@@ -7709,13 +7957,7 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           ))}
       </select>
 
-      <input
-        type="text"
-        placeholder="Search by ID / Name / Email"
-        value={exportUserQuery}
-        onChange={(e) => setExportUserQuery(e.target.value)}
-        style={{ minWidth: 260 }}
-      />
+      <input type="text" placeholder="Search by ID / Name / Email" value={exportUserQuery} onChange={(e) => setExportUserQuery(e.target.value)}/>
 
       <button className="btn" onClick={() => { setExportUserId(""); setExportUserQuery(""); }}>
         Clear Filter
@@ -7728,8 +7970,8 @@ title={desktopSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
       <button className="btn blue" onClick={exportOTExcelFiltered}>Export OT</button>
       <button className="btn blue" onClick={exportLeaveExcelFiltered}>Export Leave</button>
     </div>
-    </section>
-  )}
+  </section>
+)}
 
     </main>
     </div>
