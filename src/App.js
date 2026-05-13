@@ -4030,27 +4030,42 @@ const leaveSummaryUids = Object.keys(usersMap || {})
       };
 
       //Attendance (date is inside month)
-      const exportAttendanceExcelFiltered = () => {
-      const { start, endExclusive } = ExportmonthRange(exportMonth);
+     const exportAttendanceExcelFiltered = async () => {
+      try {
+        const { start, endExclusive } = ExportmonthRange(exportMonth);
 
-      const filtered = (allAttendance || []).filter((a) => {
-        if (!a?.date) return false;
-        if (a.date < start || a.date >= endExclusive) return false;
+        const q = query(
+          collection(db, "attendance"),
+          where("date", ">=", start),
+          where("date", "<", endExclusive)
+        );
 
-        if (exportUserId) return a.userId === exportUserId;
-        return staffMatches(a.userId, exportUserQuery);
-      });
+        const snap = await getDocs(q);
+        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-      const rows = filtered.map((a) => ({
-        Date: a.date || "",
-        EmployeeID: usersMap?.[a.userId]?.eid || "",
-        Name: usersMap?.[a.userId]?.name || "",
-        Email: usersMap?.[a.userId]?.email || "",
-        ClockIn: a.clockInTime || "",
-        ClockOut: a.clockOutTime || "",
-      }));
+        const filtered = list.filter((a) => {
+          if (exportUserId) return a.userId === exportUserId;
+          return staffMatches(a.userId, exportUserQuery);
+        });
 
-      exportToExcel(rows, `Attendance_${exportMonth}`, "Attendance");
+        const rows = filtered.map((a) => ({
+          Date: a.date || "",
+          EmployeeID: usersMap?.[a.userId]?.eid || "",
+          Name: usersMap?.[a.userId]?.name || "",
+          Email: usersMap?.[a.userId]?.email || "",
+          ClockIn: a.clockIn
+            ? formatTimeByViewMode(a.clockIn)
+            : a.clockInTime || "",
+          ClockOut: a.clockOut
+            ? formatTimeByViewMode(a.clockOut)
+            : a.clockOutTime || "",
+        }));
+
+        exportToExcel(rows, `Attendance_${exportMonth}`, "Attendance");
+      } catch (err) {
+        console.error(err);
+        notify("❌ Export Attendance failed: " + err.message);
+      }
     };
 
     //OT (same idea, OT has date)
@@ -4081,15 +4096,25 @@ const leaveSummaryUids = Object.keys(usersMap || {})
     };
 
     //Leave (overlap with month)
-    const exportLeaveExcelFiltered = () => {
+    const exportLeaveExcelFiltered = async () => {
+  try {
     const { start, endExclusive } = ExportmonthRange(exportMonth);
 
-    const filtered = (allLeaves || []).filter((lv) => {
-      const s = lv?.startDate;
-      const e = lv?.endDate;
+    const q = query(
+      collection(db, "leaves"),
+      where("startDate", "<", endExclusive)
+    );
+
+    const snap = await getDocs(q);
+    const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+    const filtered = list.filter((lv) => {
+      const s = lv?.startDate || "";
+      const e = lv?.endDate || "";
+
       if (!s || !e) return false;
 
-      // overlap condition: [s,e] overlaps [start, endExclusive)
+      // leave overlaps selected month
       const overlaps = !(e < start || s >= endExclusive);
       if (!overlaps) return false;
 
@@ -4098,18 +4123,24 @@ const leaveSummaryUids = Object.keys(usersMap || {})
     });
 
     const rows = filtered.map((lv) => ({
+      ApplyDate: lv.createdAt?.slice(0, 10) || "",
       StartDate: lv.startDate || "",
       EndDate: lv.endDate || "",
       EmployeeID: usersMap?.[lv.userId]?.eid || "",
       Name: usersMap?.[lv.userId]?.name || "",
       Email: usersMap?.[lv.userId]?.email || "",
-      Type: lv.leaveType || lv.type || "",
+      LeaveType: lv.leaveType || "",
+      LeaveName: lv.leaveName || "",
       Reason: lv.reason || "",
       Status: lv.status || "",
     }));
 
     exportToExcel(rows, `Leave_${exportMonth}`, "Leave");
-  };
+  } catch (err) {
+    console.error(err);
+    notify("❌ Export Leave failed: " + err.message);
+  }
+};
 
   //Employee info (filter by name/id/email only)
   const exportEmployeesExcelFiltered = () => {
@@ -4141,13 +4172,9 @@ useEffect(() => {
     if (Object.keys(usersMap || {}).length === 0) {
       await loadAllUsers();
     }
-
     await loadEmployees();
-    await loadAllAttendance();
-    await loadAllOvertime();
-    await loadAllLeaves();
   })();
-}, [user, isAdmin, activeSidebar, exportMonth]);
+}, [user, isAdmin, activeSidebar]);
 
 
   // export excel end
