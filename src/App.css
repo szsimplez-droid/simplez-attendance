@@ -29,13 +29,19 @@ body {
 .pagination {
   display: flex;
   justify-content: center;
-  align-items: center;
+  align-items: baseline;
   gap: 12px;
   margin: 16px 0 24px;
 }
 
 .pagination span {
   font-weight: 700;
+}
+
+.pagination .btn.small {
+    padding: 4px 8px;
+    font-size: 14px;
+    box-shadow: rgba(0, 0, 0, 0.24) 0px 3px 8px;
 }
 
 .desktop-collapse-btn {
@@ -1791,6 +1797,9 @@ div.colheaders{
 
 
 @media (max-width: 768px) {
+  .pagination .btn.small {
+    width: 20%;
+  }
   .desktop-collapse-btn {
     display: none;
   }
