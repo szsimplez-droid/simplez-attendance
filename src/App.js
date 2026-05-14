@@ -162,6 +162,7 @@ const [leaveNameFilter, setLeaveNameFilter] = useState("");
 const [leaveFromDate, setLeaveFromDate] = useState("");
 const [leaveToDate, setLeaveToDate] = useState("");
 const [otNameFilter, setOtNameFilter] = useState("");
+const [openLeaveBalanceRows, setOpenLeaveBalanceRows] = useState({});
 
 const [attendanceSearch, setAttendanceSearch] = useState("");
 const [attendanceMonth, setAttendanceMonth] = useState(() => {
@@ -1211,7 +1212,7 @@ useEffect(() => {
     await loadAllUsers();
     await loadAllAttendance();
   })();
-}, [user, isAdmin, activeSidebar,attendanceMonth]);
+}, [user, isAdmin, activeSidebar]);
 
 useEffect(() => {
   if (!user || !isAdmin || activeSidebar !== "admin-att-overview") return;
@@ -6580,7 +6581,6 @@ useEffect(() => {
             placeholder="Holiday name"
             value={holidayName}
             onChange={(e) => setHolidayName(e.target.value)}
-            style={{ minWidth: 240 }}
           />
           </div>
          <button className="btn blue" onClick={adminAddOrUpdateHoliday} style={{ marginTop: 20 }}>💾 Save Holiday</button>
@@ -7361,18 +7361,19 @@ useEffect(() => {
 
         <div style={{ overflowX: "auto" }}>
           <table className="data-table" style={{ minWidth: 900 }}>
-            <thead>
-              <tr>
-                <th style={{ width: 120 }}>Employee ID</th>
-                <th style={{ width: 260 }}>Name</th>
-                <th>Leave Balance</th>
-                <th style={{ width: 120 }}>Action</th>
-              </tr>
-            </thead>
+              <thead>
+                <tr>
+                  <th style={{ width: 120 }}>Employee ID</th>
+                  <th style={{ width: 260 }}>Name</th>
+                  <th>Leave Balance</th>
+                  <th style={{ width: 120 }}>Action</th>
+                </tr>
+              </thead>
 
             <tbody>
               {filteredUserIdsForLeave.map((uid) => {
-                // keep your setValue logic (same as your current code)
+                const isOpen = !!openLeaveBalanceRows[uid];
+
                 const setValue = (type, field, value) => {
                   setLeaveBalances((prev) => ({
                     ...prev,
@@ -7389,107 +7390,158 @@ useEffect(() => {
                   }));
                 };
 
+                const renderLeaveCard = (t, fullWidth = false) => {
+                  const base = getBal(uid, t.key, "base");
+                  const carry = t.hasCarry ? getBal(uid, t.key, "carry") : 0;
+                  const allowance = Number(base) + Number(carry);
+
+                  const manualTaken = getBal(uid, t.key, "taken");
+                  const computedTaken = getLeaveTaken(uid, t.key);
+
+                  const taken =
+                    manualTaken !== "" &&
+                    manualTaken !== null &&
+                    manualTaken !== undefined
+                      ? Number(manualTaken)
+                      : Number(computedTaken);
+
+                  const balance = allowance - taken;
+
+                  return (
+                    <div
+                      key={t.key}
+                      style={{
+                        border: "1px solid #e9eef5",
+                        borderRadius: 10,
+                        padding: 12,
+                        background: "#fff",
+                        marginBottom: fullWidth ? 12 : 0,
+                        width: 350,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontWeight: 700,
+                          fontSize: 16,
+                          color: "#0f172a",
+                          marginBottom: 10,
+                        }}
+                      >
+                        {t.label}
+                      </div>
+
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: t.hasCarry
+                            ? "repeat(4, 1fr)"
+                            : "repeat(3, 1fr)",
+                          gap: 10,
+                          alignItems: "center",
+                        }}
+                      >
+                        <div style={{ fontSize: 12, color: "#666" }}>Allowance</div>
+                        {t.hasCarry && (
+                          <div style={{ fontSize: 12, color: "#666" }}>Carry</div>
+                        )}
+                        <div style={{ fontSize: 12, color: "#666" }}>Taken</div>
+                        <div style={{ fontSize: 12, color: "#666" }}>Balance</div>
+
+                        <input
+                          type="number"
+                          value={base}
+                          onChange={(e) => setValue(t.key, "base", e.target.value)}
+                          placeholder="Base"
+                          style={{ width: 55 }}
+                        />
+
+                        {t.hasCarry && (
+                          <input
+                            type="number"
+                            value={carry}
+                            onChange={(e) => setValue(t.key, "carry", e.target.value)}
+                            placeholder="Carry"
+                            style={{ width: 55 }}
+                          />
+                        )}
+
+                        <input
+                          type="number"
+                          value={taken}
+                          onChange={(e) => setValue(t.key, "taken", e.target.value)}
+                          placeholder="Taken"
+                          style={{ width: 55 }}
+                        />
+
+                        <input
+                          type="number"
+                          value={balance}
+                          readOnly
+                          style={{
+                            background: "#f7f8fa",
+                            color: balance < 0 ? "red" : "#111",
+                            fontWeight: 700,
+                            width: 55,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                };
+
                 return (
                   <tr key={uid}>
-                    <td style={{ fontWeight: 700 }}>
-                      {usersMap[uid]?.eid || "-"}
-                    </td>
+                    <td style={{ fontWeight: 700 }}>{usersMap[uid]?.eid || "-"}</td>
 
                     <td>
-                      <div style={{ fontWeight: 700 }}>{displayUser(uid)}</div>
-                      <div style={{ fontSize: 12, color: "#666" }}>
-                        {usersMap[uid]?.email || ""}
-                      </div>
-                    </td>
+                      
 
-                    {/* Leave list (your sketch) */}
-                    <td>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                          {LEAVE_TYPES.map((t) => {
-                          const base = getBal(uid, t.key, "base");
-                          const carry = t.hasCarry ? getBal(uid, t.key, "carry") : 0;
-                          const allowance = Number(base) + Number(carry);
-
-                          // manual taken stored in leaveBalances
-                          const manualTaken = getBal(uid, t.key, "taken");
-
-                          // if manual taken is empty/null, fallback to computed taken from leave requests
-                          const computedTaken = getLeaveTaken(uid, t.key);
-                          const taken = (manualTaken !== "" && manualTaken !== null && manualTaken !== undefined)
-                            ? Number(manualTaken)
-                            : Number(computedTaken);
-
-                          const balance = allowance - taken;
-
-
-                          return (
-                            <div
-                              key={t.key}
-                              style={{
-                                border: "1px solid #e9eef5",
-                                borderRadius: 10,
-                                padding: 12,
-                                background: "#fff",
-                              }}
-                            >
-                              <div style={{ width: 670, display: "flex", alignItems: "center", gap: 12 }}>
-                                <div style={{ width: 100, fontWeight: 700 }}>{t.label}</div>
-
-                                {/* Header row inside */}
-                                <div style={{ display: "grid", gridTemplateColumns: t.hasCarry ? "120px 120px 120px 120px" : "120px 120px 120px", gap: 10, alignItems: "center" }}>
-                                  <div style={{ fontSize: 12, color: "#666" }}>Allowance</div>
-                                  {t.hasCarry && <div style={{ fontSize: 12, color: "#666" }}>Carry</div>}
-                                  <div style={{ fontSize: 12, color: "#666" }}>Taken</div>
-                                  <div style={{ fontSize: 12, color: "#666" }}>Balance</div>
-
-                                  {/* Inputs row */}
-                                  <input
-                                    type="number"
-                                    value={base}
-                                    onChange={(e) => setValue(t.key, "base", e.target.value)}
-                                   
-                                    placeholder="Base"
-                                  />
-
-                                  {t.hasCarry && (
-                                    <input
-                                      type="number"
-                                      value={carry}
-                                      onChange={(e) => setValue(t.key, "carry", e.target.value)}
-                                     
-                                      placeholder="Carry"
-                                    />
-                                  )}
-
-                                  {/* Taken: usually computed (read-only). If you want manual, change to input + store. */}
-                                 <input
-                                  type="number"
-                                  value={taken}
-                                  onChange={(e) => setValue(t.key, "taken", e.target.value)}
-                                  placeholder="Taken"
-                                />
-
-
-                                  <input
-                                    type="number"
-                                    value={balance}
-                                    readOnly
-                                    style={{
-                                      background: "#f7f8fa",
-                                      color: balance < 0 ? "red" : "#111",
-                                      fontWeight: 700,
-                                    }}
-                                  />
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
+                      <div style={{ display: "inline-block", verticalAlign: "middle" }}>
+                        <div style={{ fontWeight: 700 }}>{displayUser(uid)}</div>
+                        <div style={{ fontSize: 12, color: "#666" }}>
+                          {usersMap[uid]?.email || ""}
+                        </div>
                       </div>
                     </td>
 
                     <td>
-                      <button className="btn small blue" onClick={() => saveLeaveBalance(uid)}>
+                      {LEAVE_TYPES.filter((t) => t.hasCarry).map((t) =>
+                        renderLeaveCard(t, true)
+                      )}
+
+                      {isOpen && (
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(2, 1fr)",
+                            gap: 12,
+                            marginBottom:12
+                          }}
+                        >
+                          {LEAVE_TYPES.filter((t) => !t.hasCarry).map((t) =>
+                            renderLeaveCard(t)
+                          )}
+                        </div>
+                      )}
+                      <button
+                        className="btn small"
+                        style={{padding: 10,backgroundColor:"#333",color:"#fff" }}
+                        onClick={() =>
+                          setOpenLeaveBalanceRows((prev) => ({
+                            ...prev,
+                            [uid]: !prev[uid],
+                          }))
+                        }
+                      >
+                        {isOpen ? "Show Less" : "Show More"}
+                      </button>
+                    </td>
+
+                    <td>
+                      <button
+                        className="btn small blue leave"
+                        onClick={() => saveLeaveBalance(uid)}
+                      >
                         💾 Save
                       </button>
                     </td>
