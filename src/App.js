@@ -367,6 +367,36 @@ const openNotification = (n) => {
 
 // notifications end
 
+/* ---------------- pagination ---------------- */
+  const PAGE_SIZE = 10;
+  
+
+  const [pageMap, setPageMap] = useState({});
+
+  const getPage = (key) => pageMap[key] || 1;
+
+  const setPage = (key, page) => {
+    setPageMap((prev) => ({
+      ...prev,
+      [key]: page,
+    }));
+  };
+
+  const paginate = (list, key) => {
+    const page = getPage(key);
+    const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+    const safePage = Math.min(page, totalPages);
+
+    const start = (safePage - 1) * PAGE_SIZE;
+    const rows = list.slice(start, start + PAGE_SIZE);
+
+    return {
+      rows,
+      page: safePage,
+      totalPages,
+    };
+  };
+
   const emptyEmployeeForm = {
     employeeCode: "",
     employeeName: "",
@@ -1024,15 +1054,7 @@ const loadLeaderAttendance = async (memberIds) => {
       : "-";
 
   // Returns today's date in YYYY-MM-DD format (Yangon time)
-/*   const getTodayDateYangon = () => {
-    const now = new Date(
-      new Date().toLocaleString("en-US", { timeZone: "Asia/Yangon" })
-    );
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, "0");
-    const day = String(now.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  }; */
+
   const getTodayDateYangon = () => {
   const now = new Date();
 
@@ -2479,31 +2501,6 @@ const clockOut = async () => {
   const getEmpName = (uid) => getEmp(uid)?.name || displayUser(uid) || "";
   const getEmpEmail = (uid) => getEmp(uid)?.email || "";
 
-    /* const filteredAttendance = (allAttendance || [])
-.filter((a) => {
-    if (!attendanceMonth) return true;
-    return (a.date || "").startsWith(attendanceMonth);
-  })
-  .filter((a) => {
-    const q = attendanceSearch.trim().toLowerCase();
-    if (!q) return true;
-
-    const uid = a.userId;
-    const hay = [
-      getEid(uid),
-      getEmpName(uid),
-      getEmpEmail(uid),
-      a.date || "",
-    ]
-      .join(" ")
-      .toLowerCase();
-
-    return hay.includes(q);
-  })
-
-  .sort((x, y) => (y.date || "").localeCompare(x.date || ""));
- */
-
   const filteredAttendance = (allAttendance || [])
   .filter((a) => shouldShowRecordForUser(a.userId, a.date))
   .filter((a) => {
@@ -3803,20 +3800,7 @@ const calcLeaveUnits = (leave) => {
   return dayCount * multiplier;
 };
 
-/*   const deleteLeaveRequest = async (id) => {
-  try {
-    if (!window.confirm("Delete this leave request?")) return;
-
-    await deleteDoc(doc(db, "leaves", id));
-    notify("🗑 Leave request deleted");
-    loadAllLeaves(); // refresh admin list
-  } catch (err) {
-    console.error(err);
-    notify("❌ Delete failed: " + err.message);
-  }
-}; */
-
-   const leaderUpdateOvertimeStatus = async (otDocId, status, memberUserId) => {
+const leaderUpdateOvertimeStatus = async (otDocId, status, memberUserId) => {
     if (!leaderMembers.includes(memberUserId)) {
       return notify("🚫 You cannot approve non-member overtime.");
     }
@@ -4180,6 +4164,22 @@ useEffect(() => {
 
   // export excel end
 
+  //Pagination
+  const pagedAttendance = paginate(filteredAttendance, "attendance");
+  const pagedEmployees = paginate(filteredEmployees, "employees");
+  const pagedOT = paginate(filteredAllMemberOT, "admin-ot");
+  const pagedPO = paginate(filteredAllPoReports, "admin-po");
+  const pagedLeave = paginate(filteredAllMemberLeaves, "admin-leave");
+  const pagedLeaveBalance = paginate(filteredUserIdsForLeave, "leave-balance");
+  const pagedLocation  = paginate(filteredEmployeeslocation, "location");
+  const pagedGPS = paginate(filteredGpsSettingEmployees, "gps");
+  const paged_mem_att = paginate(filteredMemberAttendance, "mem-att");
+  const paged_mem_leave = paginate(filteredMemberLeaves, "mem-leave");
+  const paged_mem_ot = paginate(filteredMemberOT, "mem-ot");
+  const paged_month_summary = paginate(monthlySummaryByUser, "month-summary");
+  const paged_leave_summary = paginate(leaveSummaryUids, "leave-summary");
+  const pagedPayroll = paginate(allPayroll, "payroll");
+
   /* ---------------- summary / csv / clear ---------------- */
   const getMonthlySummary = () => {
     const sum = {};
@@ -4448,6 +4448,35 @@ useEffect(() => {
   : s === "leader_approved" ? <span className="badge blue">Leader Approved</span>
   : <span className="badge yellow">Pending</span>;
 
+  const Pagination = ({ list, pageKey }) => {
+  const { page, totalPages } = paginate(list, pageKey);
+
+  if (list.length <= PAGE_SIZE) return null;
+
+  return (
+    <div className="pagination">
+      <button
+        className="btn small"
+        disabled={page <= 1}
+        onClick={() => setPage(pageKey, page - 1)}
+      >
+        Prev
+      </button>
+
+      <span>
+        Page {page} / {totalPages}
+      </span>
+
+      <button
+        className="btn small"
+        disabled={page >= totalPages}
+        onClick={() => setPage(pageKey, page + 1)}
+      >
+        Next
+      </button>
+    </div>
+  );
+};
 
   /* ---------------- render ---------------- */
   if (authLoading) {
@@ -5679,7 +5708,7 @@ useEffect(() => {
       <thead><tr><th>User</th><th>Date</th><th>Clock In</th><th>Clock Out</th><th>In Loc</th><th>Out Loc</th><th>Action</th></tr></thead>
       <tbody>
         {filteredMemberAttendance.length === 0 ? <tr><td colSpan="7" style={{ textAlign: "center", padding: "20px" }}>No attendance records found for this month.</td></tr> :
-          filteredMemberAttendance.map((at, i) => (
+          paged_mem_att.rows.map((at, i) => (
             <tr key={at.id}>
               <td>{displayUser(at.userId)}</td>
               <td>{at.date}</td>
@@ -5704,6 +5733,11 @@ useEffect(() => {
         }
       </tbody>
     </table>
+
+    <Pagination
+      list={filteredMemberAttendance}
+      pageKey="mem-att"
+    />
 
     {editingLeaderAttendance && (
   <div className="modal-overlay" onClick={() => setEditingLeaderAttendance(null)}>
@@ -5795,7 +5829,7 @@ useEffect(() => {
         {filteredMemberLeaves.length === 0 ? (
           <tr><td colSpan="9" style={{ textAlign: "center", padding: "20px" }}>No leave requests found for this month.</td></tr>
         ) : (
-          filteredMemberLeaves.map((lv) => (
+           paged_mem_leave.rows.map((lv) => (
             <tr key={lv.id}>
               <td>{displayUser(lv.userId)}</td>
               <td>{lv.createdAt?.split("T")[0]}</td>
@@ -5822,6 +5856,12 @@ useEffect(() => {
         )}
       </tbody>
     </table>
+
+    <Pagination
+      list={filteredMemberLeaves}
+      pageKey="mem-leave"
+    />
+
      </div>
   </section>
 )}
@@ -5857,7 +5897,7 @@ useEffect(() => {
         {filteredMemberOT.length === 0 ? (
           <tr><td colSpan="7" style={{ textAlign: "center", padding: "20px" }}>No overtime requests found for this month.</td></tr>
         ) : (
-          filteredMemberOT.map((ot) => (
+          paged_mem_att.rows.map((ot) => (
             <tr key={ot.id}>
               <td>{displayUser(ot.userId)}</td>
               <td>{ot.date}</td>
@@ -5882,6 +5922,10 @@ useEffect(() => {
         )}
       </tbody>
     </table>
+     <Pagination
+      list={filteredMemberOT}
+      pageKey="mem-ot"
+    />
      </div>
   </section>
 )}
@@ -5939,7 +5983,7 @@ useEffect(() => {
           {filteredEmployees.length === 0 ? (
             <tr><td colSpan="8">No employees found</td></tr>
           ) : (
-            filteredEmployees.map((e) => (
+            pagedEmployees.rows.map((e) => (
               <tr
                 key={e.id}
                 onClick={() => openEmployeeForEdit(e)}
@@ -5965,6 +6009,10 @@ useEffect(() => {
           )}
         </tbody>
       </table>
+      <Pagination
+        list={filteredEmployees}
+        pageKey="employees"
+      />
     </div>
 
       {/* Form */}
@@ -6350,7 +6398,7 @@ useEffect(() => {
       </thead>
 
       <tbody>
-       {filteredEmployeeslocation.map((emp) => (
+       {pagedLocation.rows.map((emp) => (
 
           <React.Fragment key={emp.id}>
             {/* MAIN ROW */}
@@ -6391,6 +6439,11 @@ useEffect(() => {
             )) }
         </tbody>
     </table>
+
+     <Pagination
+      list={filteredEmployeeslocation}
+      pageKey="location"
+    />
 
      {showLocationModal && locationEditEmp && (
           <div
@@ -6517,7 +6570,7 @@ useEffect(() => {
         {filteredGpsSettingEmployees.length === 0 ? (
           <tr><td colSpan="7">No staff found</td></tr>
         ) : (
-          filteredGpsSettingEmployees.map((emp) => {
+          pagedGPS.rows.map((emp) => {
             const currentMode = getAttendanceLocationModeValue(emp);
             return (
               <tr key={emp.id}>
@@ -6558,6 +6611,10 @@ useEffect(() => {
         )}
       </tbody>
     </table>
+    <Pagination
+      list={filteredGpsSettingEmployees}
+      pageKey="gps"
+    />
   </section>
 )}
 
@@ -6867,7 +6924,7 @@ useEffect(() => {
 
               <tbody>
                 {allAttendance.length===0 ? <tr><td colSpan="7">No attendance</td></tr> :
-                  filteredAttendance.map((a) => (
+                  pagedAttendance.rows.map((a) => (
                     <tr key={a.id} style={{
                       color: isResignedHistoricalRow(a.userId, a.date) ? "#dc2626" : "inherit",
                       fontWeight: isResignedHistoricalRow(a.userId, a.date) ? 700 : 400,
@@ -6895,6 +6952,10 @@ useEffect(() => {
                 }
               </tbody>
             </table>
+            <Pagination
+              list={filteredAttendance}
+              pageKey="attendance"
+            />
             </section>
         )}
 
@@ -7030,7 +7091,7 @@ useEffect(() => {
                   </tr>
                 </thead>
                 <tbody>
-                  {monthlySummaryByUser.map((r) => (
+                  {paged_month_summary.rows.map((r) => (
                     <tr key={r.uid}>
                       <td style={{ fontWeight: 700 }}>{r.eid || "-"}</td>
                       <td>{r.name}</td>
@@ -7045,6 +7106,11 @@ useEffect(() => {
                   ))}
                 </tbody>
               </table>
+
+              <Pagination
+              list={monthlySummaryByUser}
+              pageKey="month-summary"
+            />
             </section>
 
           )}
@@ -7109,7 +7175,7 @@ useEffect(() => {
                 {filteredAllPoReports.length === 0 ? (
                   <tr><td colSpan="5">No P/O records found.</td></tr>
                 ) : (
-                  filteredAllPoReports.map((p) => (
+                  pagedPO.rows.map((p) => (
                   <tr key={p.id} style={{
                     color: isResignedHistoricalRow(p.userId, p.date) ? "#dc2626" : "inherit",
                     fontWeight: isResignedHistoricalRow(p.userId, p.date) ? 700 : 400,
@@ -7155,7 +7221,12 @@ useEffect(() => {
                 )}
               </tbody>
             </table>
-                      </section>
+
+            <Pagination
+            list={filteredAllPoReports}
+            pageKey="admin-po"
+          />
+          </section>
         )}
 
 
@@ -7239,7 +7310,7 @@ useEffect(() => {
 
               <tbody>
                 {filteredAllMemberLeaves.length===0 ? <tr><td colSpan="10">No leave requests</td></tr> :
-                  filteredAllMemberLeaves.map((lv) => (
+                  pagedLeave.rows.map((lv) => (
                     
                     <tr key={lv.id} style={{
                     color: isResignedHistoricalRow(lv.userId, lv.date) ? "#dc2626" : "inherit",
@@ -7291,6 +7362,11 @@ useEffect(() => {
                 }
               </tbody>
             </table>
+
+            <Pagination
+              list={filteredAllMemberLeaves}
+              pageKey="admin-leave"
+            />
 
             {editingLeave && (
               <div className="modal-overlay" onClick={() => setEditingLeave(null)}>
@@ -7371,7 +7447,7 @@ useEffect(() => {
               </thead>
 
             <tbody>
-              {filteredUserIdsForLeave.map((uid) => {
+              {pagedLeaveBalance.rows.map((uid) => {
                 const isOpen = !!openLeaveBalanceRows[uid];
 
                 const setValue = (type, field, value) => {
@@ -7550,6 +7626,11 @@ useEffect(() => {
               })}
             </tbody>
           </table>
+
+          <Pagination
+            list={filteredUserIdsForLeave}
+            pageKey="leave-balance"
+        />
         </div>
       </section>
 
@@ -7584,7 +7665,7 @@ useEffect(() => {
                 </tr>
               </thead>
               <tbody>
-                {leaveSummaryUids.map((uid) => {
+                {paged_leave_summary.rows.map((uid) => {
                   const leaveTypes = {
                     "Casual Leave": 6,
                     "Annual Leave": 10,
@@ -7643,6 +7724,12 @@ useEffect(() => {
               </tbody>
 
             </table>
+
+             <Pagination
+              list={leaveSummaryUids}
+              pageKey="leave-summary"
+            />
+
           </section>
         )}
 
@@ -7691,7 +7778,7 @@ useEffect(() => {
               <thead><tr><th>User</th><th>Date</th><th>Time</th><th>Total</th><th>Reason</th><th>Approver</th><th>Status</th><th>Action</th></tr></thead>
               <tbody>
                 {filteredAllMemberOT.length===0 ? <tr><td colSpan="8">No OT requests</td></tr> :
-                  filteredAllMemberOT.map((ot) => (
+                  pagedOT.rows.map((ot) => (
                     <tr key={ot.id} style={{
                       color: isResignedHistoricalRow(ot.userId, ot.date) ? "#dc2626" : "inherit",
                       fontWeight: isResignedHistoricalRow(ot.userId, ot.date) ? 700 : 400,
@@ -7724,6 +7811,11 @@ useEffect(() => {
                 }
               </tbody>
             </table>
+
+            <Pagination
+              list={filteredAllMemberOT}
+              pageKey="admin-ot"
+            />
           </section>
         )}
 
@@ -7781,7 +7873,7 @@ useEffect(() => {
         <td colSpan="9">No payroll records found.</td>
         </tr>
         ) : (
-        allPayroll.map((p) => {
+        pagedPayroll.rows.map((p) => {
           const fullName = p.name || "";
 
           const match = fullName.match(/^([^\u3040-\u30FF]*)([\u3040-\u30FF].*)?$/);
@@ -7849,6 +7941,11 @@ useEffect(() => {
         )}
         </tbody>
       </table>
+
+      <Pagination
+      list={allPayroll}
+      pageKey="payroll"
+    />
     </div>
 
     {selectedPayroll && (

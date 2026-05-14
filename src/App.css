@@ -26,6 +26,18 @@ body {
   padding-top: 15px;
 }
 
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0 24px;
+}
+
+.pagination span {
+  font-weight: 700;
+}
+
 .desktop-collapse-btn {
 background: transparent;
     border: none;
