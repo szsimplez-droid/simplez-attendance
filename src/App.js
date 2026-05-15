@@ -139,6 +139,7 @@ export default function App() {
   // attendance / lists
   const [attendance, setAttendance] = useState([]);
   const [allAttendance, setAllAttendance] = useState([]);
+   const [overviewAttendance, setOverviewAttendance] = useState([]);
   const [leaves, setLeaves] = useState([]);
   const [deptFilter, setDeptFilter] = useState("");
   const [allLeaves, setAllLeaves] = useState([]);
@@ -170,6 +171,19 @@ const [attendanceMonth, setAttendanceMonth] = useState(() => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; // "YYYY-MM"
 });
 
+// Attendance Overview controls
+const [overviewLeaveUserId, setOverviewLeaveUserId] = useState("");
+const [overviewLeaveStart, setOverviewLeaveStart] = useState("");
+const [overviewLeaveEnd, setOverviewLeaveEnd] = useState("");
+const [overviewLeaveType, setOverviewLeaveType] = useState("Full Day");
+const [overviewLeaveName, setOverviewLeaveName] = useState("Casual Leave");
+const [overviewLeaveReason, setOverviewLeaveReason] = useState("");
+const [overviewUserId, setOverviewUserId] = useState("");
+const [overviewMonth, setOverviewMonth] = useState(() => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+});
+const [overviewLeaves, setOverviewLeaves] = useState([]);
 
 // Admin filters: show approved/rejected (pending is default)
 const [showApprovedLeave, setShowApprovedLeave] = useState(false);
@@ -259,7 +273,7 @@ const [openMenuGroup, setOpenMenuGroup] = useState("myMenu");
 // open in new tab end
 
 //still login start
-useEffect(() => {
+/* useEffect(() => {
   const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
     try {
       if (!firebaseUser) {
@@ -293,14 +307,90 @@ useEffect(() => {
       setMessage(
         <>
           Welcome {data.name || firebaseUser.email}
-          {/* <br />
-          You are now logged in as {data.role} */}
         </>
       );
 
       if (data.location) setUserSavedLocation(data.location);
     } catch (err) {
       console.error("Auth restore error:", err);
+    } finally {
+      setAuthLoading(false);
+    }
+  });
+
+  return () => unsub();
+}, []); */
+
+useEffect(() => {
+  const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+    try {
+      if (!firebaseUser) {
+        setUser(null);
+        setRole("");
+        setRoles([]);
+        setName("");
+        setMessage("");
+        setAuthLoading(false);
+
+        clearCache(CACHE_KEYS.profile);
+
+        return;
+      }
+
+      setUser(firebaseUser);
+
+      // ---------------- LOAD CACHE FIRST ----------------
+      const cached = loadCache(CACHE_KEYS.profile);
+
+      if (cached && cached.uid === firebaseUser.uid) {
+        setRole(cached.role || "");
+        setRoles(cached.roles || []);
+        setName(cached.name || "");
+
+        if (cached.location) {
+          setUserSavedLocation(cached.location);
+        }
+      }
+
+      // ---------------- FIREBASE REFRESH ----------------
+      const uid = firebaseUser.uid;
+
+      const ud = await getDoc(doc(db, "users", uid));
+
+      if (!ud.exists()) {
+        notify("User record not found");
+        return;
+      }
+
+      const data = ud.data();
+
+      const rolesArr =
+        data.roles || (data.role ? [data.role] : []);
+
+      setRole(data.role || "");
+      setRoles(rolesArr);
+      setName(data.name || "");
+
+      if (data.location) {
+        setUserSavedLocation(data.location);
+      }
+
+      // ---------------- SAVE CACHE ----------------
+      saveCache(CACHE_KEYS.profile, {
+        uid,
+        role: data.role || "",
+        roles: rolesArr,
+        name: data.name || "",
+        location: data.location || null,
+      });
+
+      setMessage(
+        <>
+          Welcome {data.name || firebaseUser.email}
+        </>
+      );
+    } catch (err) {
+      console.error(err);
     } finally {
       setAuthLoading(false);
     }
@@ -396,6 +486,32 @@ const openNotification = (n) => {
       totalPages,
     };
   };
+
+   // ---------------- CACHE HELPERS ----------------
+const CACHE_KEYS = {
+  profile: "cached_profile",
+  employees: "cached_employees",
+  usersMap: "cached_users_map",
+};
+
+const saveCache = (key, value) => {
+  localStorage.setItem(key, JSON.stringify(value));
+};
+
+const loadCache = (key, fallback = null) => {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const clearCache = (key) => {
+  localStorage.removeItem(key);
+};
+
+// cached helper end
 
   const emptyEmployeeForm = {
     employeeCode: "",
@@ -516,6 +632,8 @@ const openNotification = (n) => {
       if (selectedEmpId) {
         // UPDATE existing
         await updateDoc(doc(db, "users", selectedEmpId), payload);
+        clearCache(CACHE_KEYS.employees);
+        clearCache(CACHE_KEYS.usersMap);
         notify("✅ Employee updated");
       } else {
         // CREATE new
@@ -523,6 +641,8 @@ const openNotification = (n) => {
           ...payload,
           createdAt: new Date().toISOString(),
         });
+        clearCache(CACHE_KEYS.employees);
+        clearCache(CACHE_KEYS.usersMap);
         notify("✅ New employee created");
       }
 
@@ -683,6 +803,10 @@ const openNotification = (n) => {
         updatedBy: auth.currentUser?.uid || null,
         leaderId: employeeForm.leaderId || "",
       });
+
+      if (selectedEmpId === user?.uid) {
+        clearCache(CACHE_KEYS.profile);
+      }
 
       notify("✅ Employee updated");
       setEmployeeForm(emptyEmployeeForm);
@@ -1232,19 +1356,21 @@ useEffect(() => {
 
   (async () => {
     await loadAllUsers();
-    await loadAllAttendance();
+   /*  await loadAllAttendance(); */
+   await loadAllAttendance(attendanceMonth);
   })();
-}, [user, isAdmin, activeSidebar]);
+}, [user, isAdmin, activeSidebar,attendanceMonth]);
 
 useEffect(() => {
   if (!user || !isAdmin || activeSidebar !== "admin-att-overview") return;
 
   (async () => {
     await loadAllUsers();
-    await loadAllAttendance();
-    await loadAllLeaves();
+    await loadOverviewAttendance(overviewMonth);
+    await loadOverviewLeaves(overviewMonth);
   })();
-}, [user, isAdmin, activeSidebar]);
+}, [user, isAdmin, activeSidebar, overviewMonth]);
+
 
 /* useEffect(() => {
   if (!user || !isAdmin || activeSidebar !== "admin-leave") return;
@@ -1272,15 +1398,6 @@ useEffect(() => {
   showApprovedLeave,
   showRejectedLeave,
 ]);
-
-/* useEffect(() => {
-  if (!user || !isAdmin || activeSidebar !== "admin-ot") return;
-
-  (async () => {
-    await loadAllUsers();
-    await loadAllOvertime();
-  })();
-}, [user, isAdmin, activeSidebar]); */
 
 useEffect(() => {
   if (!user || !isAdmin || activeSidebar !== "admin-ot") return;
@@ -1314,9 +1431,10 @@ useEffect(() => {
 
   (async () => {
     await loadAllUsers();
-    await loadAllAttendance();
+   /*  await loadAllAttendance(); */
+    await loadAllAttendance(attendanceMonth);
   })();
-}, [user, isAdmin, activeSidebar]);
+}, [user, isAdmin, activeSidebar,attendanceMonth]);
 
 useEffect(() => {
   if (!user || !isAdmin || activeSidebar !== "admin-leave-balance") return;
@@ -1675,7 +1793,7 @@ const deletePayrollSummary = async (id) => {
   /* ---------------- data loaders ---------------- */
   
   // Load all employees
-const loadEmployees = async () => {
+/* const loadEmployees = async () => {
   try {
     if (!auth.currentUser) return;
 
@@ -1691,6 +1809,42 @@ const loadEmployees = async () => {
       .filter((u) => (u.employmentStatus || "active") !== "inactive");
 
     setEmployees(list);
+  } catch (err) {
+    console.error("loadEmployees error:", err);
+  }
+}; */
+
+const loadEmployees = async () => {
+  try {
+    // ---------------- LOAD CACHE FIRST ----------------
+    const cached = loadCache(CACHE_KEYS.employees, []);
+
+    if (cached.length > 0) {
+      setEmployees(cached);
+    }
+
+    // ---------------- FIREBASE ----------------
+    const q = query(
+      collection(db, "users"),
+      orderBy("eid", "asc")
+    );
+
+    const snap = await getDocs(q);
+
+    const list = snap.docs
+      .map((d) => ({
+        id: d.id,
+        ...d.data(),
+      }))
+      .filter(
+        (u) =>
+          (u.employmentStatus || "active") !== "inactive"
+      );
+
+    setEmployees(list);
+
+    // ---------------- SAVE CACHE ----------------
+    saveCache(CACHE_KEYS.employees, list);
   } catch (err) {
     console.error("loadEmployees error:", err);
   }
@@ -1742,7 +1896,7 @@ const loadEmployees = async () => {
 };
 
   //12/18
-  const loadAllUsers = async () => {
+  /*   const loadAllUsers = async () => {
     const snap = await getDocs(collection(db, "users"));
     const map = {};
     snap.forEach((docSnap) => {
@@ -1758,22 +1912,117 @@ const loadEmployees = async () => {
       };
     });
     setUsersMap(map);
-  };
+  }; */
 
-  const loadAllAttendance = async () => {
+  const loadAllUsers = async () => {
+  // ---------------- LOAD CACHE FIRST ----------------
+  const cached = loadCache(CACHE_KEYS.usersMap, null);
+
+  if (cached) {
+    setUsersMap(cached);
+  }
+
+  // ---------------- FIREBASE ----------------
+  const snap = await getDocs(collection(db, "users"));
+
+  const map = {};
+
+  snap.forEach((docSnap) => {
+    const d = docSnap.data();
+
+    const key = d.authUid || docSnap.id;
+
+    map[key] = {
+      id: key,
+      ...d,
+
+      jobAllowance: Number(d.JobTitleAllowance || 0),
+      directorAllowance: Number(d.DirectorAllowance || 0),
+      languageAllowance: Number(d.LanguageAllowance || 0),
+    };
+  });
+
+  setUsersMap(map);
+
+  // ---------------- SAVE CACHE ----------------
+  saveCache(CACHE_KEYS.usersMap, map);
+};
+
+/*   const loadAllAttendance = async () => {
   const snap = await getDocs(collection(db, "attendance"));
   const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   list.sort((a, b) => new Date(b.date) - new Date(a.date));
   setAllAttendance(list);
+  }; */
+
+  const loadAllAttendance = async (month = attendanceMonth) => {
+    try {
+      const { start, endExclusive } = ExportmonthRange(month);
+
+      const q = query(
+        collection(db, "attendance"),
+        where("date", ">=", start),
+        where("date", "<", endExclusive)
+      );
+
+      const snap = await getDocs(q);
+
+      const list = snap.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+      }));
+
+      list.sort((a, b) => new Date(b.date) - new Date(a.date));
+      setAllAttendance(list);
+    } catch (err) {
+      console.error("loadAllAttendance error:", err);
+      notify("❌ Attendance cannot load: " + err.message);
+    }
+  };
+
+  const loadOverviewAttendance = async (month = overviewMonth) => {
+  const { start, endExclusive } = ExportmonthRange(month);
+
+  const q = query(
+    collection(db, "attendance"),
+    where("date", ">=", start),
+    where("date", "<", endExclusive)
+  );
+
+  const snap = await getDocs(q);
+
+  const list = snap.docs.map((d) => ({
+    id: d.id,
+    ...d.data(),
+  }));
+
+  setOverviewAttendance(list);
 };
 
-/*  const loadAllLeaves = async () => {
-    const snap = await getDocs(collection(db, "leaves"));
-    const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    list.sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
-    setAllLeaves(list);
-  };
- */
+const loadOverviewLeaves = async (month = overviewMonth) => {
+  const { start, endExclusive } = ExportmonthRange(month);
+
+  const q = query(
+    collection(db, "leaves"),
+    where("startDate", "<", endExclusive)
+  );
+
+  const snap = await getDocs(q);
+
+  const list = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((l) => {
+      const s = l.startDate || "";
+      const e = l.endDate || "";
+
+      if (!s || !e) return false;
+
+      // overlaps selected month
+      return e >= start;
+    });
+
+  setOverviewLeaves(list);
+};
 
   const loadAllLeaves = async () => {
   const statuses = ["pending", "leader_approved"];
@@ -1794,13 +2043,6 @@ const loadEmployees = async () => {
 
   setAllLeaves(list);
 };
-
-/*   const loadAllOvertime = async () => {
-    const snap = await getDocs(collection(db, "overtimeRequests"));
-    const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    list.sort((a, b) => new Date(b.date) - new Date(a.date)); // ✅ newest first
-    setAllOvertime(list);
-  }; */
 
   const loadAllOvertime = async () => {
   const statuses = ["pending"];
@@ -1841,21 +2083,6 @@ const [holidayMonth, setHolidayMonth] = useState(() => {
 });
 const [holidayDate, setHolidayDate] = useState(""); // "YYYY-MM-DD"
 const [holidayName, setHolidayName] = useState("");
-
-
-// Attendance Overview controls
-const [overviewLeaveUserId, setOverviewLeaveUserId] = useState("");
-const [overviewLeaveStart, setOverviewLeaveStart] = useState("");
-const [overviewLeaveEnd, setOverviewLeaveEnd] = useState("");
-const [overviewLeaveType, setOverviewLeaveType] = useState("Full Day");
-const [overviewLeaveName, setOverviewLeaveName] = useState("Casual Leave");
-const [overviewLeaveReason, setOverviewLeaveReason] = useState("");
-
-const [overviewMonth, setOverviewMonth] = useState(() => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-});
-const [overviewUserId, setOverviewUserId] = useState("");
 
 const adminCreateLeaveForStaff = async () => {
   try {
@@ -2059,9 +2286,10 @@ const holidayMap = React.useMemo(() => {
 
 const findAttendanceByUserAndDate = (uid, dateStr) => {
   if (!uid || !dateStr) return null;
-  return (allAttendance || []).find((a) => a.userId === uid && a.date === dateStr) || null;
+  return (overviewAttendance || []).find(
+    (a) => a.userId === uid && a.date === dateStr
+  ) || null;
 };
-
   // Calculate duration in hours and minutes
   const calcPoDuration = (from, to) => {
   const [fh, fm] = from.split(":").map(Number);
@@ -2310,7 +2538,8 @@ const checkLocationRange = async () => {
     notify(successMsg);
 
     loadAttendance(user.uid);
-   /*  if (isAdmin) loadAllAttendance(); */
+   if (isAdmin) /* loadAllAttendance(); */
+    loadAllAttendance(attendanceMonth);
 
   } catch (err) {
     console.error(err);
@@ -2386,7 +2615,8 @@ const clockOut = async () => {
     notify(successMsg);
 
     loadAttendance(user.uid);
-    if (isAdmin) loadAllAttendance();
+    if (isAdmin) /* loadAllAttendance(); */
+    loadAllAttendance(attendanceMonth);
 
   } catch (err) {
     console.error(err);
@@ -2489,7 +2719,8 @@ const clockOut = async () => {
 
     notify("✅ Attendance saved");
     setCreatingAttendance(false);
-    loadAllAttendance();
+     /* loadAllAttendance(); */
+    loadAllAttendance(attendanceMonth);
   } catch (err) {
     console.error(err);
     notify("❌ Cannot save attendance: " + err.message);
@@ -2589,7 +2820,8 @@ const adminUpdateAttendanceTime = async () => {
     setEditClockIn("");
     setEditClockOut("");
 
-    loadAllAttendance();
+     /* loadAllAttendance(); */
+    loadAllAttendance(attendanceMonth);
   } catch (err) {
     console.error(err);
     notify("❌ Cannot update attendance: " + err.message);
@@ -2698,7 +2930,8 @@ const adminBulkCreateMonthAttendance = async () => {
 
     notify(`✅ Bulk done. Created/updated: ${createdCount}, Skipped: ${skippedCount}`);
     setCreatingAttendance(false);
-    loadAllAttendance();
+     /* loadAllAttendance(); */
+    loadAllAttendance(attendanceMonth);
   } catch (err) {
     console.error(err);
     notify("❌ Cannot bulk add: " + err.message);
@@ -2721,7 +2954,8 @@ const adminDeleteAttendance = async () => {
 
     notify("🗑 Attendance deleted");
     setEditingAttendance(null);
-    loadAllAttendance();
+     /* loadAllAttendance(); */
+    loadAllAttendance(attendanceMonth);
   } catch (err) {
     console.error(err);
     notify("❌ Delete failed: " + err.message);
@@ -2769,7 +3003,8 @@ const adminDeleteMonthAttendance = async () => {
     await batch.commit();
 
     notify(`🗑 Deleted ${docsToDelete.length} attendance records`);
-    loadAllAttendance();
+     /* loadAllAttendance(); */
+    loadAllAttendance(attendanceMonth);
   } catch (err) {
     console.error(err);
     notify("❌ Delete failed: " + err.message);
@@ -2811,7 +3046,7 @@ const getLeaveDayAbbr = (leave) => {
 };
 
 
-const getLeaveAbbreviationForDate = (userId, date) => {
+/* const getLeaveAbbreviationForDate = (userId, date) => {
   const leave = allLeaves.find((l) => {
     if (l.userId !== userId) return false;
     if (l.status !== "approved") return false;
@@ -2826,6 +3061,30 @@ const getLeaveAbbreviationForDate = (userId, date) => {
   if (!leave) return "";
 
   const typeAbbr = LEAVE_TYPE_ABBR[(leave.leaveName || "").toLowerCase().trim()] || "";
+  const dayAbbr = getLeaveDayAbbr(leave);
+
+  return `${dayAbbr}/${typeAbbr}`;
+}; */
+
+const getLeaveAbbreviationForDate = (userId, date) => {
+  const leave = overviewLeaves.find((l) => {
+    if (l.userId !== userId) return false;
+
+    const status = String(l.status || "").toLowerCase();
+
+    // show only final approved leave
+    if (status !== "approved") return false;
+
+    return date >= l.startDate && date <= l.endDate;
+  });
+
+  if (!leave) return "";
+
+  const typeAbbr =
+    LEAVE_TYPE_ABBR[
+      String(leave.leaveName || "").toLowerCase().trim()
+    ] || "";
+
   const dayAbbr = getLeaveDayAbbr(leave);
 
   return `${dayAbbr}/${typeAbbr}`;
@@ -4328,7 +4587,8 @@ useEffect(() => {
     setAllPayslips([]);
 
     // ✅ Reload admin lists again (optional)
-    loadAllAttendance();
+    /* loadAllAttendance(); */
+    loadAllAttendance(attendanceMonth);
     loadAllLeaves();
     loadAllOvertime();
     loadAllPoReports();
@@ -4405,7 +4665,8 @@ useEffect(() => {
     notify(`✅ Deleted ${totalDeleted} records for ${month}`);
 
     // Reload admin data
-    loadAllAttendance();
+    /* loadAllAttendance(); */
+    loadAllAttendance(attendanceMonth);
     loadAllLeaves();
     loadAllOvertime();
     loadAllPoReports();
@@ -7066,7 +7327,7 @@ useEffect(() => {
         )}
 
          {isAdmin && activeSidebar==="admin-att-summary" && (
-            <section className="card" style={{ marginTop: 18 }}>
+            <section className="card">
               <h2>Monthly Attendance Summary </h2>
 
               <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
