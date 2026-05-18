@@ -45,6 +45,8 @@ import PayrollCalculator from "./PayrollCalculator";
 const clickSound = new Audio("/click.mp3");
 const successSound = new Audio("/success.mp3");
 
+ 
+
 /* ---------------- helper: distance (meters) ---------------- */
 function getDistanceInMeters(lat1, lon1, lat2, lon2) {
   const R = 6371e3;
@@ -139,7 +141,7 @@ export default function App() {
   // attendance / lists
   const [attendance, setAttendance] = useState([]);
   const [allAttendance, setAllAttendance] = useState([]);
-   const [overviewAttendance, setOverviewAttendance] = useState([]);
+  const [overviewAttendance, setOverviewAttendance] = useState([]);
   const [leaves, setLeaves] = useState([]);
   const [deptFilter, setDeptFilter] = useState("");
   const [allLeaves, setAllLeaves] = useState([]);
@@ -171,6 +173,25 @@ const [attendanceMonth, setAttendanceMonth] = useState(() => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; // "YYYY-MM"
 });
 
+const getCurrentMonth = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+};
+
+const [monthFilter, setMonthFilter] = useState(getCurrentMonth());
+const [attendanceMonthFilter, setAttendanceMonthFilter] = useState(getCurrentMonth());
+const [otMonthFilter, setOtMonthFilter] = useState(getCurrentMonth());
+
+const [poSearch, setPoSearch] = useState("");
+const [poDeptFilter, setPoDeptFilter] = useState("");
+const [poMonthFilter, setPoMonthFilter] = useState(getCurrentMonth());
+
+const [myLeaveMonth, setMyLeaveMonth] = useState(() => getCurrentMonth());
+const [myOtMonth, setMyOtMonth] = useState(() => getCurrentMonth());
+const [myPOMonth, setMyPOMonth] = useState(() => getCurrentMonth());
+
 // Attendance Overview controls
 const [overviewLeaveUserId, setOverviewLeaveUserId] = useState("");
 const [overviewLeaveStart, setOverviewLeaveStart] = useState("");
@@ -179,11 +200,17 @@ const [overviewLeaveType, setOverviewLeaveType] = useState("Full Day");
 const [overviewLeaveName, setOverviewLeaveName] = useState("Casual Leave");
 const [overviewLeaveReason, setOverviewLeaveReason] = useState("");
 const [overviewUserId, setOverviewUserId] = useState("");
+const [overviewLeaves, setOverviewLeaves] = useState([]);
+
 const [overviewMonth, setOverviewMonth] = useState(() => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 });
-const [overviewLeaves, setOverviewLeaves] = useState([]);
+const [myAttendanceMonth, setMyAttendanceMonth] = useState(() => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+});
+
 
 // Admin filters: show approved/rejected (pending is default)
 const [showApprovedLeave, setShowApprovedLeave] = useState(false);
@@ -376,12 +403,21 @@ useEffect(() => {
       }
 
       // ---------------- SAVE CACHE ----------------
+     /*  saveCache(CACHE_KEYS.profile, {
+        uid,
+        role: data.role || "",
+        roles: rolesArr,
+        name: data.name || "",
+        location: data.location || null,
+      }); */
       saveCache(CACHE_KEYS.profile, {
         uid,
         role: data.role || "",
         roles: rolesArr,
         name: data.name || "",
         location: data.location || null,
+        locations: data.locations || [],
+        attendanceLocationMode: data.attendanceLocationMode || "required",
       });
 
       setMessage(
@@ -408,8 +444,8 @@ useEffect(() => {
 
   const q = query(
     collection(db, "notifications"),
-    where("userId", "==", user.uid)
-   
+    where("userId", "==", user.uid),
+    orderBy("date", "desc")
   );
 
   const unsub = onSnapshot(
@@ -425,13 +461,14 @@ useEffect(() => {
     },
     (err) => {
       console.error("Notification listener error:", err);
+      notify("Notification error: " + err.message);
     }
   );
 
   return () => unsub();
 }, [user]);
 
-const markAllRead = async () => {
+/* const markAllRead = async () => {
   const unread = notifications.filter((n) => !n.read);
 
   for (let n of unread) {
@@ -439,6 +476,21 @@ const markAllRead = async () => {
       read: true,
     });
   }
+}; */
+
+const markAllRead = async () => {
+  const unread = notifications.filter((n) => !n.read);
+  if (unread.length === 0) return;
+
+  const batch = writeBatch(db);
+
+  unread.forEach((n) => {
+    batch.update(doc(db, "notifications", n.id), {
+      read: true,
+    });
+  });
+
+  await batch.commit();
 };
 
 const openNotification = (n) => {
@@ -457,7 +509,7 @@ const openNotification = (n) => {
 
 // notifications end
 
-/* ---------------- pagination ---------------- */
+ /* ---------------- pagination ---------------- */
   const PAGE_SIZE = 10;
   
 
@@ -487,21 +539,40 @@ const openNotification = (n) => {
     };
   };
 
-   // ---------------- CACHE HELPERS ----------------
+  // ---------------- CACHE HELPERS ----------------
 const CACHE_KEYS = {
   profile: "cached_profile",
   employees: "cached_employees",
   usersMap: "cached_users_map",
 };
 
+const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
 const saveCache = (key, value) => {
-  localStorage.setItem(key, JSON.stringify(value));
+  localStorage.setItem(
+    key,
+    JSON.stringify({
+      value,
+      savedAt: Date.now(),
+    })
+  );
 };
 
 const loadCache = (key, fallback = null) => {
   try {
     const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
+    if (!raw) return fallback;
+
+    const parsed = JSON.parse(raw);
+
+    // support your old cache format
+    if (!parsed.savedAt) return parsed;
+
+    if (Date.now() - parsed.savedAt > CACHE_TTL) {
+      return fallback;
+    }
+
+    return parsed.value;
   } catch {
     return fallback;
   }
@@ -647,7 +718,8 @@ const clearCache = (key) => {
       }
 
     // refresh list + reset
-    await loadEmployees();
+    await loadEmployees(true);
+    await loadAllUsers(true);
     setSelectedEmpId(null);
     setEmployeeForm(emptyEmployeeForm);
   } catch (err) {
@@ -779,7 +851,8 @@ const clearCache = (key) => {
     setLoginEmail("");
     setTempPassword("");
     setShowTempPw(false);
-    loadEmployees();
+    await loadEmployees(true);
+    await loadAllUsers(true);
     
   } catch (err) {
     console.error(err);
@@ -811,7 +884,8 @@ const clearCache = (key) => {
       notify("✅ Employee updated");
       setEmployeeForm(emptyEmployeeForm);
       setSelectedEmpId(null);
-      loadEmployees();
+     await loadEmployees(true);
+     await loadAllUsers(true);
     } catch (err) {
       console.error(err);
       notify("❌ Update failed: " + (err?.message || "unknown error"));
@@ -833,8 +907,8 @@ const clearCache = (key) => {
     });
 
     notify("✅ Employee marked as resigned");
-    await loadEmployees();
-    await loadAllUsers();
+    await loadEmployees(true);
+    await loadAllUsers(true);
   } catch (err) {
     console.error(err);
     notify("❌ Resign failed: " + err.message);
@@ -853,8 +927,8 @@ const restoreEmployeeActive = async () => {
     });
 
     notify("✅ Employee restored");
-    await loadEmployees();
-    await loadAllUsers();
+    await loadEmployees(true);
+    await loadAllUsers(true);
   } catch (err) {
     console.error(err);
     notify("❌ Restore failed: " + err.message);
@@ -945,7 +1019,8 @@ const createEmployeeSecondaryAuth = async () => {
     setEmployeeForm(emptyEmployeeForm);
 
     // refresh list
-    loadEmployees();
+    await loadEmployees(true);
+    await loadAllUsers(true);
   } catch (err) {
     console.error("createEmployeeSecondaryAuth error:", err);
     notify("❌ Create failed: " + (err?.message || "unknown error"));
@@ -1121,7 +1196,7 @@ const loadLeaderOvertime = async (memberIds) => {
   setLeaderOvertime(results);
 };
 
-const loadLeaderAttendance = async (memberIds) => {
+/* const loadLeaderAttendance = async (memberIds) => {
   if (!memberIds || memberIds.length === 0) {
     setLeaderAttendance([]);
     return;
@@ -1133,11 +1208,44 @@ const loadLeaderAttendance = async (memberIds) => {
     results = results.concat(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
   }
 
-  // ✅ sort newest first
+  results.sort((a, b) => new Date(b.date) - new Date(a.date));
+  setLeaderAttendance(results);
+}; */
+
+const loadLeaderAttendance = async (
+  memberIds,
+  month = attendanceMonthFilter
+) => {
+  if (!memberIds || memberIds.length === 0) {
+    setLeaderAttendance([]);
+    return;
+  }
+
+  const { start, endExclusive } = ExportmonthRange(month);
+
+  let results = [];
+
+  for (const batch of chunk(memberIds, 10)) {
+    const q = query(
+      collection(db, "attendance"),
+      where("userId", "in", batch),
+      where("date", ">=", start),
+      where("date", "<", endExclusive)
+    );
+
+    const snap = await getDocs(q);
+
+    results = results.concat(
+      snap.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+      }))
+    );
+  }
+
   results.sort((a, b) => new Date(b.date) - new Date(a.date));
   setLeaderAttendance(results);
 };
-
  
   // Admin: remember each staff's selected leave type
   const [leaveSelections, setLeaveSelections] = useState(() => {
@@ -1271,6 +1379,8 @@ const isEarlyOutByYangonTime = (isoString) => {
     hour12: false,
   });
 
+ 
+
 
   /* ---------------- login / logout ---------------- */
   const handleLogin = async (e) => {
@@ -1311,12 +1421,12 @@ const isEarlyOutByYangonTime = (isoString) => {
 
     // leader login
     if (has("leader")) {
-      await loadAllUsers();
+      await loadAllUsers(true);
     }
 
     // admin login
     if (has("admin")) {
-      await loadAllUsers();
+      await loadAllUsers(true);
     }
 
   } catch (err) {
@@ -1326,8 +1436,8 @@ const isEarlyOutByYangonTime = (isoString) => {
 
 useEffect(() => {
   if (!user || activeSidebar !== "my-att") return;
-  loadAttendance(user.uid);
-}, [user, activeSidebar]);
+  loadAttendance(user.uid, myAttendanceMonth);
+}, [user, activeSidebar, myAttendanceMonth]);
 
 useEffect(() => {
   if (!user || activeSidebar !== "my-leave") return;
@@ -1339,11 +1449,11 @@ useEffect(() => {
 useEffect(() => {
   if (!user || activeSidebar !== "my-panel") return;
 
-  loadAttendance(user.uid);
+  loadAttendance(user.uid, myCalendarMonth);
   loadLeaves(user.uid);
   loadPoReports(user.uid);
   loadCompanyHolidaysForMonth(myCalendarMonth);
-}, [user, activeSidebar,myCalendarMonth]);
+}, [user, activeSidebar, myCalendarMonth]);
 
 useEffect(() => {
   if (!user || activeSidebar !== "my-po") return;
@@ -1355,7 +1465,7 @@ useEffect(() => {
   if (!user || !isAdmin || activeSidebar !== "admin-att") return;
 
   (async () => {
-    await loadAllUsers();
+    await ensureUsersLoaded();
    /*  await loadAllAttendance(); */
    await loadAllAttendance(attendanceMonth);
   })();
@@ -1365,18 +1475,17 @@ useEffect(() => {
   if (!user || !isAdmin || activeSidebar !== "admin-att-overview") return;
 
   (async () => {
-    await loadAllUsers();
+    await ensureUsersLoaded();
     await loadOverviewAttendance(overviewMonth);
     await loadOverviewLeaves(overviewMonth);
   })();
 }, [user, isAdmin, activeSidebar, overviewMonth]);
 
-
 /* useEffect(() => {
   if (!user || !isAdmin || activeSidebar !== "admin-leave") return;
 
   (async () => {
-    await loadAllUsers();
+    await ensureUsersLoaded();
     await loadAllLeaves();
   })();
 }, [user, isAdmin, activeSidebar]); */
@@ -1386,7 +1495,7 @@ useEffect(() => {
 
   (async () => {
     if (Object.keys(usersMap || {}).length === 0) {
-      await loadAllUsers();
+      await ensureUsersLoaded();
     }
 
     await loadAllLeaves();
@@ -1404,7 +1513,7 @@ useEffect(() => {
 
   (async () => {
     if (Object.keys(usersMap || {}).length === 0) {
-      await loadAllUsers();
+      await ensureUsersLoaded();
     }
 
     await loadAllOvertime();
@@ -1421,16 +1530,16 @@ useEffect(() => {
   if (!user || !isAdmin || activeSidebar !== "admin-po") return;
 
   (async () => {
-    await loadAllUsers();
-    await loadAllPoReports();
+    await ensureUsersLoaded();
+    await loadAllPoReports(poMonthFilter);
   })();
-}, [user, isAdmin, activeSidebar]);
+}, [user, isAdmin, activeSidebar, poMonthFilter]);
 
 useEffect(() => {
   if (!user || !isAdmin || activeSidebar !== "admin-att-summary") return;
 
   (async () => {
-    await loadAllUsers();
+    await ensureUsersLoaded();
    /*  await loadAllAttendance(); */
     await loadAllAttendance(attendanceMonth);
   })();
@@ -1440,7 +1549,7 @@ useEffect(() => {
   if (!user || !isAdmin || activeSidebar !== "admin-leave-balance") return;
 
   (async () => {
-    await loadAllUsers();
+    await ensureUsersLoaded();
     await loadLeaveBalances();
   })();
 }, [user, isAdmin, activeSidebar]);
@@ -1449,7 +1558,7 @@ useEffect(() => {
   if (!user || !isAdmin || activeSidebar !== "admin-leave-summary") return;
 
   (async () => {
-    await loadAllUsers();
+    await ensureUsersLoaded();
     await loadLeaveBalances();
     await loadAllLeaves();
   })();
@@ -1459,17 +1568,17 @@ useEffect(() => {
   if (!user || !isLeader || activeSidebar !== "member-att-panel") return;
 
   (async () => {
-    await loadAllUsers();
+    await ensureUsersLoaded();
     const ids = await loadLeaderMembers(user.uid);
-    await loadLeaderAttendance(ids);
+    await loadLeaderAttendance(ids, attendanceMonthFilter);
   })();
-}, [user, isLeader, activeSidebar]);
+}, [user, isLeader, activeSidebar, attendanceMonthFilter]);
 
 useEffect(() => {
   if (!user || !isLeader || activeSidebar !== "member-leave-panel") return;
 
   (async () => {
-    await loadAllUsers();
+    await ensureUsersLoaded();
     const ids = await loadLeaderMembers(user.uid);
     await loadLeaderLeaves(ids);
   })();
@@ -1479,7 +1588,7 @@ useEffect(() => {
   if (!user || !isLeader || activeSidebar !== "member-ot-panel") return;
 
   (async () => {
-    await loadAllUsers();
+    await ensureUsersLoaded();
     const ids = await loadLeaderMembers(user.uid);
     await loadLeaderOvertime(ids);
   })();
@@ -1489,7 +1598,7 @@ useEffect(() => {
   if (!user || !isAdmin || activeSidebar !== "admin-payroll") return;
 
   (async () => {
-    await loadAllUsers();
+    await ensureUsersLoaded();
     await loadEmployees(); // optional, but good if PayrollCalculator uses employees too
   })();
 }, [user, isAdmin, activeSidebar]);
@@ -1814,16 +1923,17 @@ const deletePayrollSummary = async (id) => {
   }
 }; */
 
-const loadEmployees = async () => {
+const loadEmployees = async (forceRefresh = false) => {
   try {
-    // ---------------- LOAD CACHE FIRST ----------------
-    const cached = loadCache(CACHE_KEYS.employees, []);
+    if (!forceRefresh) {
+      const cached = loadCache(CACHE_KEYS.employees, []);
 
-    if (cached.length > 0) {
-      setEmployees(cached);
+      if (cached.length > 0) {
+        setEmployees(cached);
+        return cached;
+      }
     }
 
-    // ---------------- FIREBASE ----------------
     const q = query(
       collection(db, "users"),
       orderBy("eid", "asc")
@@ -1842,11 +1952,12 @@ const loadEmployees = async () => {
       );
 
     setEmployees(list);
-
-    // ---------------- SAVE CACHE ----------------
     saveCache(CACHE_KEYS.employees, list);
+
+    return list;
   } catch (err) {
     console.error("loadEmployees error:", err);
+    return [];
   }
 };
 
@@ -1856,14 +1967,17 @@ const loadEmployees = async () => {
       if (!window.confirm("Delete this employee?")) return;
       await deleteDoc(doc(db, "users", id));
       notify("🗑 Employee deleted");
-      loadEmployees();
+      clearCache(CACHE_KEYS.employees);
+      clearCache(CACHE_KEYS.usersMap);
+      await loadEmployees(true);
+      await loadAllUsers(true);
     };
 
     useEffect(() => {
     if (isAdmin) loadEmployees();
   }, [role]);
 
-  const loadAttendance = async (uid) => {
+/*   const loadAttendance = async (uid) => {
     const q = query(collection(db, "attendance"), where("userId", "==", uid));
     const snap = await getDocs(q);
 
@@ -1871,6 +1985,31 @@ const loadEmployees = async () => {
     list.sort((a, b) => new Date(b.date) - new Date(a.date)); // ✅ newest first
     setAttendance(list);
   };
+ */
+
+  const loadAttendance = async (
+  uid,
+  month = myCalendarMonth || getCurrentMonth()
+) => {
+  const { start, endExclusive } = ExportmonthRange(month);
+
+  const q = query(
+    collection(db, "attendance"),
+    where("userId", "==", uid),
+    where("date", ">=", start),
+    where("date", "<", endExclusive)
+  );
+
+  const snap = await getDocs(q);
+
+  const list = snap.docs.map((d) => ({
+    id: d.id,
+    ...d.data(),
+  }));
+
+  list.sort((a, b) => new Date(b.date) - new Date(a.date));
+  setAttendance(list);
+};
 
   const loadLeaves = async (uid) => {
     const q = query(collection(db, "leaves"), where("userId", "==", uid));
@@ -1896,7 +2035,7 @@ const loadEmployees = async () => {
 };
 
   //12/18
-  /*   const loadAllUsers = async () => {
+/*   const loadAllUsers = async () => {
     const snap = await getDocs(collection(db, "users"));
     const map = {};
     snap.forEach((docSnap) => {
@@ -1914,28 +2053,27 @@ const loadEmployees = async () => {
     setUsersMap(map);
   }; */
 
-  const loadAllUsers = async () => {
-  // ---------------- LOAD CACHE FIRST ----------------
-  const cached = loadCache(CACHE_KEYS.usersMap, null);
+  const loadAllUsers = async (forceRefresh = false) => {
+  if (!forceRefresh) {
+    const cached = loadCache(CACHE_KEYS.usersMap, null);
 
-  if (cached) {
-    setUsersMap(cached);
+    if (cached) {
+      setUsersMap(cached);
+      return cached;
+    }
   }
 
-  // ---------------- FIREBASE ----------------
   const snap = await getDocs(collection(db, "users"));
 
   const map = {};
 
   snap.forEach((docSnap) => {
     const d = docSnap.data();
-
     const key = d.authUid || docSnap.id;
 
     map[key] = {
       id: key,
       ...d,
-
       jobAllowance: Number(d.JobTitleAllowance || 0),
       directorAllowance: Number(d.DirectorAllowance || 0),
       languageAllowance: Number(d.LanguageAllowance || 0),
@@ -1943,9 +2081,17 @@ const loadEmployees = async () => {
   });
 
   setUsersMap(map);
-
-  // ---------------- SAVE CACHE ----------------
   saveCache(CACHE_KEYS.usersMap, map);
+
+  return map;
+};
+
+const ensureUsersLoaded = async () => {
+  if (Object.keys(usersMap || {}).length > 0) {
+    return usersMap;
+  }
+
+  return await loadAllUsers(false);
 };
 
 /*   const loadAllAttendance = async () => {
@@ -2290,6 +2436,7 @@ const findAttendanceByUserAndDate = (uid, dateStr) => {
     (a) => a.userId === uid && a.date === dateStr
   ) || null;
 };
+
   // Calculate duration in hours and minutes
   const calcPoDuration = (from, to) => {
   const [fh, fm] = from.split(":").map(Number);
@@ -2379,11 +2526,35 @@ const loadPoReports = async (uid) => {
 };
 
 // Load all P/O reports (for admin)
-const loadAllPoReports = async () => {
+/* const loadAllPoReports = async () => {
   const snap = await getDocs(collection(db, "poReports"));
-  /* setAllPoList(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); */
   const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   list.sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
+
+  setAllPoList(list);
+}; */
+
+const loadAllPoReports = async (month = poMonthFilter) => {
+  const { start, endExclusive } = ExportmonthRange(month);
+
+  const q = query(
+    collection(db, "poReports"),
+    where("date", ">=", start),
+    where("date", "<", endExclusive)
+  );
+
+  const snap = await getDocs(q);
+
+  const list = snap.docs.map((d) => ({
+    id: d.id,
+    ...d.data(),
+  }));
+
+  list.sort(
+    (a, b) =>
+      new Date(b.date || b.createdAt) -
+      new Date(a.date || a.createdAt)
+  );
 
   setAllPoList(list);
 };
@@ -2422,8 +2593,11 @@ const deletePoRequest = async (id) => {
 const checkLocationRange = async () => {
   if (!user) return setWithinRange(false);
   try {
-    const ud = await getDoc(doc(db, "users", user.uid));
-    const userData = ud.exists() ? ud.data() : {};
+    /* const ud = await getDoc(doc(db, "users", user.uid));
+    const userData = ud.exists() ? ud.data() : {}; */
+    const cachedProfile = loadCache(CACHE_KEYS.profile, null);
+    const userData = cachedProfile && cachedProfile.uid === user.uid ? cachedProfile : {};
+
     const mode = getAttendanceLocationModeValue(userData);
     const saved = userData?.location || null;
     setUserSavedLocation(saved || null);
@@ -2486,8 +2660,14 @@ const checkLocationRange = async () => {
 
   try {
 
-    const ud = await getDoc(doc(db, "users", user.uid));
-    const userData = ud.exists() ? ud.data() : {};
+    /* const ud = await getDoc(doc(db, "users", user.uid));
+    const userData = ud.exists() ? ud.data() : {}; */
+    let userData = loadCache(CACHE_KEYS.profile, null);
+
+    if (!userData || userData.uid !== user.uid) {
+      const ud = await getDoc(doc(db, "users", user.uid));
+      userData = ud.exists() ? ud.data() : {};
+    }
 
     const locationMode = getAttendanceLocationModeValue(userData);
     const locationResult = await getAttendanceLocationPayload(
@@ -2538,7 +2718,7 @@ const checkLocationRange = async () => {
     notify(successMsg);
 
     loadAttendance(user.uid);
-   if (isAdmin) /* loadAllAttendance(); */
+    if (isAdmin) /* loadAllAttendance(); */
     loadAllAttendance(attendanceMonth);
 
   } catch (err) {
@@ -2560,8 +2740,14 @@ const clockOut = async () => {
 
   try {
 
-    const ud = await getDoc(doc(db, "users", user.uid));
-    const userData = ud.exists() ? ud.data() : {};
+    /* const ud = await getDoc(doc(db, "users", user.uid));
+    const userData = ud.exists() ? ud.data() : {}; */
+    let userData = loadCache(CACHE_KEYS.profile, null);
+
+    if (!userData || userData.uid !== user.uid) {
+      const ud = await getDoc(doc(db, "users", user.uid));
+      userData = ud.exists() ? ud.data() : {};
+    }
 
     const locationMode = getAttendanceLocationModeValue(userData);
 
@@ -2617,7 +2803,6 @@ const clockOut = async () => {
     loadAttendance(user.uid);
     if (isAdmin) /* loadAllAttendance(); */
     loadAllAttendance(attendanceMonth);
-
   } catch (err) {
     console.error(err);
     notify("❌ Clock Out failed: " + err.message);
@@ -2719,7 +2904,7 @@ const clockOut = async () => {
 
     notify("✅ Attendance saved");
     setCreatingAttendance(false);
-     /* loadAllAttendance(); */
+    /* loadAllAttendance(); */
     loadAllAttendance(attendanceMonth);
   } catch (err) {
     console.error(err);
@@ -2820,7 +3005,7 @@ const adminUpdateAttendanceTime = async () => {
     setEditClockIn("");
     setEditClockOut("");
 
-     /* loadAllAttendance(); */
+    /* loadAllAttendance(); */
     loadAllAttendance(attendanceMonth);
   } catch (err) {
     console.error(err);
@@ -2930,8 +3115,8 @@ const adminBulkCreateMonthAttendance = async () => {
 
     notify(`✅ Bulk done. Created/updated: ${createdCount}, Skipped: ${skippedCount}`);
     setCreatingAttendance(false);
-     /* loadAllAttendance(); */
-    loadAllAttendance(attendanceMonth);
+   /*  loadAllAttendance(); */
+   loadAllAttendance(attendanceMonth);
   } catch (err) {
     console.error(err);
     notify("❌ Cannot bulk add: " + err.message);
@@ -2954,7 +3139,7 @@ const adminDeleteAttendance = async () => {
 
     notify("🗑 Attendance deleted");
     setEditingAttendance(null);
-     /* loadAllAttendance(); */
+   /*  loadAllAttendance(); */
     loadAllAttendance(attendanceMonth);
   } catch (err) {
     console.error(err);
@@ -3003,7 +3188,7 @@ const adminDeleteMonthAttendance = async () => {
     await batch.commit();
 
     notify(`🗑 Deleted ${docsToDelete.length} attendance records`);
-     /* loadAllAttendance(); */
+   /*  loadAllAttendance(); */
     loadAllAttendance(attendanceMonth);
   } catch (err) {
     console.error(err);
@@ -3090,7 +3275,6 @@ const getLeaveAbbreviationForDate = (userId, date) => {
   return `${dayAbbr}/${typeAbbr}`;
 };
 
-
 const resetFilters = () => {
   setNameFilter("");
   setDeptFilter("");
@@ -3121,33 +3305,9 @@ const resetOTFilters = () => {
 
 const safe = (v) => (v || "").toString().toLowerCase();
 
-const getCurrentMonth = () => {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  return `${year}-${month}`;
-};
-
-const [monthFilter, setMonthFilter] = useState(getCurrentMonth());
-const [attendanceMonthFilter, setAttendanceMonthFilter] = useState(getCurrentMonth());
-const [otMonthFilter, setOtMonthFilter] = useState(getCurrentMonth());
-
-const [poSearch, setPoSearch] = useState("");
-const [poDeptFilter, setPoDeptFilter] = useState("");
-const [poMonthFilter, setPoMonthFilter] = useState(getCurrentMonth());
-
-const [myAttendanceMonth, setMyAttendanceMonth] = useState(() => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-});
-
 const filteredMyAttendance = (attendance || []).filter((a) =>
   myAttendanceMonth ? (a.date || "").startsWith(myAttendanceMonth) : true
 );
-
-const [myLeaveMonth, setMyLeaveMonth] = useState(() => getCurrentMonth());
-const [myOtMonth, setMyOtMonth] = useState(() => getCurrentMonth());
-const [myPOMonth, setMyPOMonth] = useState(() => getCurrentMonth());
 
 const filteredMyLeaves = (leaves || []).filter((l) =>
   myLeaveMonth ? (l.startDate || "").startsWith(myLeaveMonth) : true
@@ -3626,7 +3786,10 @@ const selectedDayIsAbsentFull =
      if (!emp.locations || emp.locations.length !== 2) return notify("Please fill both locations.");
      await updateDoc(doc(db, "users", emp.id), { locations: emp.locations });
      notify("✅ Locations saved successfully.");
-     loadAllUsers();
+     clearCache(CACHE_KEYS.employees);
+    clearCache(CACHE_KEYS.usersMap);
+    await loadEmployees(true);
+    await loadAllUsers(true);
    };
 
    const saveEmployeeGpsSetting = async (emp) => {
@@ -3634,8 +3797,10 @@ const selectedDayIsAbsentFull =
        const attendanceLocationMode = getAttendanceLocationModeValue(emp);
        await updateDoc(doc(db, "users", emp.id), { attendanceLocationMode });
        notify("✅ GPS setting saved successfully.");
-       loadEmployees();
-       loadAllUsers();
+       clearCache(CACHE_KEYS.employees);
+        clearCache(CACHE_KEYS.usersMap);
+        await loadEmployees(true);
+        await loadAllUsers(true);
      } catch (err) {
        console.error(err);
        notify("❌ Cannot save GPS setting: " + err.message);
@@ -4059,6 +4224,7 @@ const calcLeaveUnits = (leave) => {
   return dayCount * multiplier;
 };
 
+
 const leaderUpdateOvertimeStatus = async (otDocId, status, memberUserId) => {
     if (!leaderMembers.includes(memberUserId)) {
       return notify("🚫 You cannot approve non-member overtime.");
@@ -4274,7 +4440,8 @@ const leaveSummaryUids = Object.keys(usersMap || {})
       };
 
       //Attendance (date is inside month)
-     const exportAttendanceExcelFiltered = async () => {
+
+    const exportAttendanceExcelFiltered = async () => {
       try {
         const { start, endExclusive } = ExportmonthRange(exportMonth);
 
@@ -4340,7 +4507,7 @@ const leaveSummaryUids = Object.keys(usersMap || {})
     };
 
     //Leave (overlap with month)
-    const exportLeaveExcelFiltered = async () => {
+  const exportLeaveExcelFiltered = async () => {
   try {
     const { start, endExclusive } = ExportmonthRange(exportMonth);
 
@@ -4414,7 +4581,7 @@ useEffect(() => {
 
   (async () => {
     if (Object.keys(usersMap || {}).length === 0) {
-      await loadAllUsers();
+      await ensureUsersLoaded();
     }
     await loadEmployees();
   })();
@@ -4439,7 +4606,9 @@ useEffect(() => {
   const paged_leave_summary = paginate(leaveSummaryUids, "leave-summary");
   const pagedPayroll = paginate(allPayroll, "payroll");
 
-  /* ---------------- summary / csv / clear ---------------- */
+  
+
+    /* ---------------- summary / csv / clear ---------------- */
   const getMonthlySummary = () => {
     const sum = {};
     allAttendance.forEach((a) => {
@@ -4700,6 +4869,7 @@ useEffect(() => {
     })();
   }, [user]);
 
+
   /* ---------------- UI components ---------------- */
   /* const colorStatus = (s) => s === "approved" ? <span className="badge green">Approved</span> : s === "rejected" ? <span className="badge red">Rejected</span> : <span className="badge yellow">Pending</span>; */
 
@@ -4708,6 +4878,7 @@ useEffect(() => {
   : s === "rejected" ? <span className="badge red">Rejected</span>
   : s === "leader_approved" ? <span className="badge blue">Leader Approved</span>
   : <span className="badge yellow">Pending</span>;
+
 
   const Pagination = ({ list, pageKey }) => {
   const { page, totalPages } = paginate(list, pageKey);
@@ -6090,7 +6261,7 @@ useEffect(() => {
         {filteredMemberLeaves.length === 0 ? (
           <tr><td colSpan="9" style={{ textAlign: "center", padding: "20px" }}>No leave requests found for this month.</td></tr>
         ) : (
-           paged_mem_leave.rows.map((lv) => (
+          paged_mem_leave.rows.map((lv) => (
             <tr key={lv.id}>
               <td>{displayUser(lv.userId)}</td>
               <td>{lv.createdAt?.split("T")[0]}</td>
@@ -6183,7 +6354,7 @@ useEffect(() => {
         )}
       </tbody>
     </table>
-     <Pagination
+    <Pagination
       list={filteredMemberOT}
       pageKey="mem-ot"
     />
@@ -6194,8 +6365,8 @@ useEffect(() => {
 
     
            
-      {/* Admin Employee Management */}
-      {isAdmin && activeSidebar === "admin-employee-form" && (
+    {/* Admin Employee Management */}
+    {isAdmin && activeSidebar === "admin-employee-form" && (
     <section className="card">
     <h2>Employee Information</h2>
 
@@ -6211,15 +6382,15 @@ useEffect(() => {
       <button className="btn" onClick={() => setEmpSearch("")}>Clear</button>
       <button className="btn blue" onClick={openCreateEmployeeModal}>+ New Employee</button>
 
-    <label>Employement Status</label>
-    <select
-    value={employeeStatusFilter}
-    onChange={(e) => setEmployeeStatusFilter(e.target.value)}
-    >
-    <option value="active">Active</option>
-    <option value="resigned">Resigned</option>
-    <option value="all">All</option>
-    </select>
+      <label>Employement Status</label>
+      <select
+      value={employeeStatusFilter}
+      onChange={(e) => setEmployeeStatusFilter(e.target.value)}
+      >
+      <option value="active">Active</option>
+      <option value="resigned">Resigned</option>
+      <option value="all">All</option>
+      </select>
 
     </div>
 
@@ -6240,7 +6411,7 @@ useEffect(() => {
             <th>Action</th>
           </tr>
         </thead>
-        <tbody>
+       <tbody>
           {filteredEmployees.length === 0 ? (
             <tr><td colSpan="8">No employees found</td></tr>
           ) : (
@@ -6263,7 +6434,7 @@ useEffect(() => {
                 <td>
                  <button className="btn small" onClick={() => openEditEmployeeModal(e)}>
                   ✏ Edit
-                </button>
+                </button> 
                 </td>
               </tr>
             ))
@@ -6700,12 +6871,12 @@ useEffect(() => {
             )) }
         </tbody>
     </table>
-
-     <Pagination
+    
+    <Pagination
       list={filteredEmployeeslocation}
       pageKey="location"
     />
-
+  
      {showLocationModal && locationEditEmp && (
           <div
           className="modal-backdrop"
@@ -6730,7 +6901,7 @@ useEffect(() => {
               setLocationEditEmp({ ...locationEditEmp, locations });
             }}
           />
-
+          <div>
           <label>Latitude</label>
           <input
             value={locationEditEmp.locations?.[idx]?.latitude || ""}
@@ -6750,6 +6921,7 @@ useEffect(() => {
               setLocationEditEmp({ ...locationEditEmp, locations });
             }}
           />
+          </div>
           </React.Fragment>
           ))}
           </div>
@@ -7164,11 +7336,10 @@ useEffect(() => {
               <button className="btn blue" onClick={() => openCreateAttendance ()}> ➕ Add Attendance</button>
           
             </div>
-
-           
+          
             </div>
 
-            <table className="data-table">
+              <table className="data-table">
               <thead>
               <tr>
                 <th>ID</th>
@@ -7212,7 +7383,7 @@ useEffect(() => {
                   ))
                 }
               </tbody>
-            </table>
+              </table>
             <Pagination
               list={filteredAttendance}
               pageKey="attendance"
@@ -7482,11 +7653,12 @@ useEffect(() => {
                 )}
               </tbody>
             </table>
-
+          
             <Pagination
             list={filteredAllPoReports}
             pageKey="admin-po"
           />
+            
           </section>
         )}
 
@@ -7697,202 +7869,202 @@ useEffect(() => {
         </div>
 
         <div style={{ overflowX: "auto" }}>
-          <table className="data-table" style={{ minWidth: 900 }}>
-              <thead>
-                <tr>
-                  <th style={{ width: 120 }}>Employee ID</th>
-                  <th style={{ width: 260 }}>Name</th>
-                  <th>Leave Balance</th>
-                  <th style={{ width: 120 }}>Action</th>
-                </tr>
-              </thead>
+        <table className="data-table" style={{ minWidth: 900 }}>
+          <thead>
+            <tr>
+              <th style={{ width: 120 }}>Employee ID</th>
+              <th style={{ width: 260 }}>Name</th>
+              <th>Leave Balance</th>
+              <th style={{ width: 120 }}>Action</th>
+            </tr>
+          </thead>
 
-            <tbody>
-              {pagedLeaveBalance.rows.map((uid) => {
-                const isOpen = !!openLeaveBalanceRows[uid];
+    <tbody>
+      {pagedLeaveBalance.rows.map((uid) => {
+        const isOpen = !!openLeaveBalanceRows[uid];
 
-                const setValue = (type, field, value) => {
-                  setLeaveBalances((prev) => ({
+        const setValue = (type, field, value) => {
+          setLeaveBalances((prev) => ({
+            ...prev,
+            [uid]: {
+              ...(prev[uid] || {}),
+              balances: {
+                ...(prev[uid]?.balances || {}),
+                [type]: {
+                  ...(prev[uid]?.balances?.[type] || {}),
+                  [field]: Number(value),
+                },
+              },
+            },
+          }));
+        };
+
+        const renderLeaveCard = (t, fullWidth = false) => {
+          const base = getBal(uid, t.key, "base");
+          const carry = t.hasCarry ? getBal(uid, t.key, "carry") : 0;
+          const allowance = Number(base) + Number(carry);
+
+          const manualTaken = getBal(uid, t.key, "taken");
+          const computedTaken = getLeaveTaken(uid, t.key);
+
+          const taken =
+            manualTaken !== "" &&
+            manualTaken !== null &&
+            manualTaken !== undefined
+              ? Number(manualTaken)
+              : Number(computedTaken);
+
+          const balance = allowance - taken;
+
+          return (
+            <div
+              key={t.key}
+              style={{
+                border: "1px solid #e9eef5",
+                borderRadius: 10,
+                padding: 12,
+                background: "#fff",
+                marginBottom: fullWidth ? 12 : 0,
+                width: 350,
+              }}
+            >
+              <div
+                style={{
+                  fontWeight: 700,
+                  fontSize: 16,
+                  color: "#0f172a",
+                  marginBottom: 10,
+                }}
+              >
+                {t.label}
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: t.hasCarry
+                    ? "repeat(4, 1fr)"
+                    : "repeat(3, 1fr)",
+                  gap: 10,
+                  alignItems: "center",
+                }}
+              >
+                <div style={{ fontSize: 12, color: "#666" }}>Allowance</div>
+                {t.hasCarry && (
+                  <div style={{ fontSize: 12, color: "#666" }}>Carry</div>
+                )}
+                <div style={{ fontSize: 12, color: "#666" }}>Taken</div>
+                <div style={{ fontSize: 12, color: "#666" }}>Balance</div>
+
+                <input
+                  type="number"
+                  value={base}
+                  onChange={(e) => setValue(t.key, "base", e.target.value)}
+                  placeholder="Base"
+                  style={{ width: 55 }}
+                />
+
+                {t.hasCarry && (
+                  <input
+                    type="number"
+                    value={carry}
+                    onChange={(e) => setValue(t.key, "carry", e.target.value)}
+                    placeholder="Carry"
+                    style={{ width: 55 }}
+                  />
+                )}
+
+                <input
+                  type="number"
+                  value={taken}
+                  onChange={(e) => setValue(t.key, "taken", e.target.value)}
+                  placeholder="Taken"
+                  style={{ width: 55 }}
+                />
+
+                <input
+                  type="number"
+                  value={balance}
+                  readOnly
+                  style={{
+                    background: "#f7f8fa",
+                    color: balance < 0 ? "red" : "#111",
+                    fontWeight: 700,
+                    width: 55,
+                  }}
+                />
+              </div>
+            </div>
+          );
+        };
+
+        return (
+          <tr key={uid}>
+            <td style={{ fontWeight: 700 }}>{usersMap[uid]?.eid || "-"}</td>
+
+            <td>
+              
+
+              <div style={{ display: "inline-block", verticalAlign: "middle" }}>
+                <div style={{ fontWeight: 700 }}>{displayUser(uid)}</div>
+                <div style={{ fontSize: 12, color: "#666" }}>
+                  {usersMap[uid]?.email || ""}
+                </div>
+              </div>
+            </td>
+
+            <td>
+              {LEAVE_TYPES.filter((t) => t.hasCarry).map((t) =>
+                renderLeaveCard(t, true)
+              )}
+
+              {isOpen && (
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(2, 1fr)",
+                    gap: 12,
+                    marginBottom:12
+                  }}
+                >
+                  {LEAVE_TYPES.filter((t) => !t.hasCarry).map((t) =>
+                    renderLeaveCard(t)
+                  )}
+                </div>
+              )}
+              <button
+                className="btn small"
+                style={{padding: 10,backgroundColor:"#333",color:"#fff" }}
+                onClick={() =>
+                  setOpenLeaveBalanceRows((prev) => ({
                     ...prev,
-                    [uid]: {
-                      ...(prev[uid] || {}),
-                      balances: {
-                        ...(prev[uid]?.balances || {}),
-                        [type]: {
-                          ...(prev[uid]?.balances?.[type] || {}),
-                          [field]: Number(value),
-                        },
-                      },
-                    },
-                  }));
-                };
+                    [uid]: !prev[uid],
+                  }))
+                }
+              >
+                {isOpen ? "Show Less" : "Show More"}
+              </button>
+            </td>
 
-                const renderLeaveCard = (t, fullWidth = false) => {
-                  const base = getBal(uid, t.key, "base");
-                  const carry = t.hasCarry ? getBal(uid, t.key, "carry") : 0;
-                  const allowance = Number(base) + Number(carry);
+            <td>
+              <button
+                className="btn small blue leave"
+                onClick={() => saveLeaveBalance(uid)}
+              >
+                💾 Save
+              </button>
+            </td>
+          </tr>
+        );
+      })}
+    </tbody>
+  </table>
 
-                  const manualTaken = getBal(uid, t.key, "taken");
-                  const computedTaken = getLeaveTaken(uid, t.key);
-
-                  const taken =
-                    manualTaken !== "" &&
-                    manualTaken !== null &&
-                    manualTaken !== undefined
-                      ? Number(manualTaken)
-                      : Number(computedTaken);
-
-                  const balance = allowance - taken;
-
-                  return (
-                    <div
-                      key={t.key}
-                      style={{
-                        border: "1px solid #e9eef5",
-                        borderRadius: 10,
-                        padding: 12,
-                        background: "#fff",
-                        marginBottom: fullWidth ? 12 : 0,
-                        width: 350,
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontWeight: 700,
-                          fontSize: 16,
-                          color: "#0f172a",
-                          marginBottom: 10,
-                        }}
-                      >
-                        {t.label}
-                      </div>
-
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: t.hasCarry
-                            ? "repeat(4, 1fr)"
-                            : "repeat(3, 1fr)",
-                          gap: 10,
-                          alignItems: "center",
-                        }}
-                      >
-                        <div style={{ fontSize: 12, color: "#666" }}>Allowance</div>
-                        {t.hasCarry && (
-                          <div style={{ fontSize: 12, color: "#666" }}>Carry</div>
-                        )}
-                        <div style={{ fontSize: 12, color: "#666" }}>Taken</div>
-                        <div style={{ fontSize: 12, color: "#666" }}>Balance</div>
-
-                        <input
-                          type="number"
-                          value={base}
-                          onChange={(e) => setValue(t.key, "base", e.target.value)}
-                          placeholder="Base"
-                          style={{ width: 55 }}
-                        />
-
-                        {t.hasCarry && (
-                          <input
-                            type="number"
-                            value={carry}
-                            onChange={(e) => setValue(t.key, "carry", e.target.value)}
-                            placeholder="Carry"
-                            style={{ width: 55 }}
-                          />
-                        )}
-
-                        <input
-                          type="number"
-                          value={taken}
-                          onChange={(e) => setValue(t.key, "taken", e.target.value)}
-                          placeholder="Taken"
-                          style={{ width: 55 }}
-                        />
-
-                        <input
-                          type="number"
-                          value={balance}
-                          readOnly
-                          style={{
-                            background: "#f7f8fa",
-                            color: balance < 0 ? "red" : "#111",
-                            fontWeight: 700,
-                            width: 55,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  );
-                };
-
-                return (
-                  <tr key={uid}>
-                    <td style={{ fontWeight: 700 }}>{usersMap[uid]?.eid || "-"}</td>
-
-                    <td>
-                      
-
-                      <div style={{ display: "inline-block", verticalAlign: "middle" }}>
-                        <div style={{ fontWeight: 700 }}>{displayUser(uid)}</div>
-                        <div style={{ fontSize: 12, color: "#666" }}>
-                          {usersMap[uid]?.email || ""}
-                        </div>
-                      </div>
-                    </td>
-
-                    <td>
-                      {LEAVE_TYPES.filter((t) => t.hasCarry).map((t) =>
-                        renderLeaveCard(t, true)
-                      )}
-
-                      {isOpen && (
-                        <div
-                          style={{
-                            display: "grid",
-                            gridTemplateColumns: "repeat(2, 1fr)",
-                            gap: 12,
-                            marginBottom:12
-                          }}
-                        >
-                          {LEAVE_TYPES.filter((t) => !t.hasCarry).map((t) =>
-                            renderLeaveCard(t)
-                          )}
-                        </div>
-                      )}
-                      <button
-                        className="btn small"
-                        style={{padding: 10,backgroundColor:"#333",color:"#fff" }}
-                        onClick={() =>
-                          setOpenLeaveBalanceRows((prev) => ({
-                            ...prev,
-                            [uid]: !prev[uid],
-                          }))
-                        }
-                      >
-                        {isOpen ? "Show Less" : "Show More"}
-                      </button>
-                    </td>
-
-                    <td>
-                      <button
-                        className="btn small blue leave"
-                        onClick={() => saveLeaveBalance(uid)}
-                      >
-                        💾 Save
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-
-          <Pagination
-            list={filteredUserIdsForLeave}
-            pageKey="leave-balance"
-        />
-        </div>
+  <Pagination
+      list={filteredUserIdsForLeave}
+      pageKey="leave-balance"
+  />
+</div>
       </section>
 
       )}
@@ -7986,11 +8158,10 @@ useEffect(() => {
 
             </table>
 
-             <Pagination
-              list={leaveSummaryUids}
-              pageKey="leave-summary"
-            />
-
+            <Pagination
+            list={leaveSummaryUids}
+            pageKey="leave-summary"
+          />
           </section>
         )}
 
@@ -8073,10 +8244,11 @@ useEffect(() => {
               </tbody>
             </table>
 
-            <Pagination
-              list={filteredAllMemberOT}
-              pageKey="admin-ot"
-            />
+             <Pagination
+            list={filteredAllMemberOT}
+            pageKey="admin-ot"
+          />
+
           </section>
         )}
 
@@ -8207,6 +8379,7 @@ useEffect(() => {
       list={allPayroll}
       pageKey="payroll"
     />
+
     </div>
 
     {selectedPayroll && (
