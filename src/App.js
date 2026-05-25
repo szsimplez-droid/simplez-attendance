@@ -137,6 +137,7 @@ export default function App() {
   const [showLocationModal, setShowLocationModal] = useState(false);
   const [locationEditEmp, setLocationEditEmp] = useState(null);
   const [employeeStatusFilter, setEmployeeStatusFilter] = useState("active"); // "active" | "resigned" | "all"
+  const [roleAccessSearch, setRoleAccessSearch] = useState("");
 
   // attendance / lists
   const [attendance, setAttendance] = useState([]);
@@ -1137,6 +1138,93 @@ const isAdmin = hasRole("admin");
 const isLeader = hasRole("leader");
 
 const isHR = hasRole("hr");
+
+const ROLE_PRESETS = [
+  {
+    key: "admin_full",
+    label: "Admin Full",
+    role: "admin",
+    roles: ["leader", "admin"],
+  },
+  {
+    key: "staff",
+    label: "Staff",
+    role: "staff",
+    roles: ["staff"],
+  },
+  {
+    key: "hr_admin",
+    label: "HR + Admin (No Payroll)",
+    role: "hr",
+    roles: ["leader", "admin", "hr"],
+  },
+  {
+    key: "admin_hr",
+    label: "Admin + HR (No Payroll)",
+    role: "admin",
+    roles: ["admin", "hr"],
+  },
+  {
+    key: "leader",
+    label: "Leader",
+    role: "leader",
+    roles: ["leader"],
+  },
+];
+
+const getRolePresetKey = (emp) => {
+  const r = emp.role || "";
+  const arr = emp.roles || [];
+
+  if (r === "admin" && arr.includes("leader") && arr.includes("admin") && !arr.includes("hr")) return "admin_full";
+  if (r === "staff") return "staff";
+  if (r === "hr") return "hr_admin";
+  if (r === "admin" && arr.includes("admin") && arr.includes("hr")) return "admin_hr";
+  if (r === "leader") return "leader";
+
+  return "";
+};
+
+const saveEmployeeRoleAccess = async (emp) => {
+  try {
+    if (!emp.role || !Array.isArray(emp.roles)) {
+      return notify("Please choose role access first.");
+    }
+
+    await updateDoc(doc(db, "users", emp.id), {
+      role: emp.role,
+      roles: emp.roles,
+      updatedAt: new Date().toISOString(),
+      updatedBy: auth.currentUser?.uid || null,
+    });
+
+    clearCache(CACHE_KEYS.employees);
+    clearCache(CACHE_KEYS.usersMap);
+    if (emp.id === user?.uid) clearCache(CACHE_KEYS.profile);
+
+    notify("✅ Role access saved");
+    await loadEmployees(true);
+    await loadAllUsers(true);
+  } catch (err) {
+    console.error(err);
+    notify("❌ Role access save failed: " + err.message);
+  }
+};
+
+
+const filteredRoleAccessEmployees = employees.filter((emp) => {
+  const q = roleAccessSearch.trim().toLowerCase();
+  if (!q) return true;
+
+  return (
+    (emp.eid || "").toLowerCase().includes(q) ||
+    (emp.name || "").toLowerCase().includes(q) ||
+    (emp.email || "").toLowerCase().includes(q) ||
+    (emp.department || "").toLowerCase().includes(q)
+  );
+});
+
+const pagedRoleAccess = paginate(filteredRoleAccessEmployees, "role-access");
 
 // payroll permission = ONLY admin
 const canAccessPayroll = isAdmin && !isHR;
@@ -5176,6 +5264,9 @@ useEffect(() => {
                 <a className="nav-item" href="?tab=admin-payroll-summary" onClick={(e) => handleTabClick(e, "admin-payroll-summary")}>
                   <span className="icon">💰</span> {!desktopSidebarCollapsed && <span className="nav-text">Payroll Summary</span>}
                 </a>
+                <a  className="nav-item" href="?tab=admin-role-access" onClick={(e) => handleTabClick(e, "admin-role-access")}>
+                  <span className="icon">🔐</span> {!desktopSidebarCollapsed && <span className="nav-text">Role Access Setting</span>}
+                </a>
               </>
             )}
 
@@ -8582,6 +8673,85 @@ useEffect(() => {
     </div>
   </section>
 )}
+
+    {canAccessPayroll && isAdmin && activeSidebar === "admin-role-access" && (
+  <section className="card">
+    <h2>Staff Role Access Setting</h2>
+
+    <input
+      type="text"
+      placeholder="Search by ID, name, email, department..."
+      value={roleAccessSearch}
+      onChange={(e) => setRoleAccessSearch(e.target.value)}
+      style={{ width: "100%", marginBottom: 12 }}
+    />
+
+    <table className="data-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Current role</th>
+          <th>Secondary role</th>
+          <th>Access preset</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {pagedRoleAccess.rows.map((emp) => (
+          <tr key={emp.id}>
+            <td>{emp.eid || "-"}</td>
+            <td>{emp.name || "-"}</td>
+            <td>{emp.email || "-"}</td>
+            <td>{emp.role || "-"}</td>
+            <td>{(emp.roles || []).join(", ")}</td>
+
+            <td>
+              <select
+                value={getRolePresetKey(emp)}
+                onChange={(e) => {
+                  const preset = ROLE_PRESETS.find((x) => x.key === e.target.value);
+                  if (!preset) return;
+
+                  setEmployees((prev) =>
+                    prev.map((x) =>
+                      x.id === emp.id
+                        ? { ...x, role: preset.role, roles: preset.roles }
+                        : x
+                    )
+                  );
+                }}
+              >
+                <option value="">Choose access</option>
+                {ROLE_PRESETS.map((p) => (
+                  <option key={p.key} value={p.key}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </td>
+
+            <td>
+              <button
+                className="btn small blue"
+                onClick={() => saveEmployeeRoleAccess(emp)}
+              >
+                💾 Save
+              </button>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+
+    <Pagination
+      list={filteredRoleAccessEmployees}
+      pageKey="role-access"
+    />
+    </section>
+    )}
 
     </main>
     </div>
