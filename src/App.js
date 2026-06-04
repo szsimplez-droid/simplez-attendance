@@ -229,6 +229,9 @@ const [showRejectedOT, setShowRejectedOT] = useState(false);
   const [allPoList, setAllPoList] = useState([]);
 
   const [myPayslips, setMyPayslips] = useState([]);
+  const [selectedPayrollIds, setSelectedPayrollIds] = useState([]);
+  const [bulkSending, setBulkSending] = useState(false);
+  const [payrollSummaryMonth, setPayrollSummaryMonth] = useState(getCurrentMonth());
 
   // leader scope
   const [leaderMembers, setLeaderMembers] = useState([]);
@@ -619,6 +622,37 @@ const clearCache = (key) => {
 
   const [employeeForm, setEmployeeForm] = useState(emptyEmployeeForm);
 
+  const getTodayDateYangon = () => {
+  const now = new Date();
+
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Yangon",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+
+  const year = parts.find((p) => p.type === "year")?.value;
+  const month = parts.find((p) => p.type === "month")?.value;
+  const day = parts.find((p) => p.type === "day")?.value;
+
+  return `${year}-${month}-${day}`;
+};
+
+  const isEffectivelyResigned = (u) => {
+  if (!u) return false;
+
+  const status = u.employmentStatus || "active";
+  const resignedDate = u.resignedDate || "";
+
+  if (status !== "resigned") return false;
+  if (!resignedDate) return true;
+
+  const today = getTodayDateYangon();
+
+  return today >= resignedDate;
+};
+
   const filteredEmployees = employees.filter((e) => {
   const q = empSearch.trim().toLowerCase();
 
@@ -636,10 +670,16 @@ const clearCache = (key) => {
     .toLowerCase()
     .includes(q);
 
-  const status = e.employmentStatus || "active";
+  /* const status = e.employmentStatus || "active";
   const matchStatus =
     employeeStatusFilter === "all" ||
-    status === employeeStatusFilter;
+    status === employeeStatusFilter; */
+
+  const effectiveStatus = isEffectivelyResigned(e) ? "resigned" : "active";
+
+  const matchStatus =
+  employeeStatusFilter === "all" ||
+  effectiveStatus === employeeStatusFilter;
 
   return matchSearch && matchStatus;
 });
@@ -894,52 +934,72 @@ const clearCache = (key) => {
   };
 
   const markEmployeeResigned = async () => {
-  try {
-    if (!selectedEmpId) return notify("Select employee first.");
-    if (!employeeForm.lastWorkingDay || !employeeForm.resignedDate) {
-      return notify("Please choose Last Working Day and Resigned Date.");
+    try {
+      if (!selectedEmpId) return notify("Select employee first.");
+      if (!employeeForm.lastWorkingDay || !employeeForm.resignedDate) {
+        return notify("Please choose Last Working Day and Resigned Date.");
+      }
+  
+      const resignedPayload = {
+        employmentStatus: "resigned",
+        lastWorkingDay: employeeForm.lastWorkingDay,
+        resignedDate: employeeForm.resignedDate,
+        updatedAt: new Date().toISOString(),
+      };
+  
+      await updateDoc(doc(db, "users", selectedEmpId), resignedPayload);
+  
+      setEmployeeForm((prev) => ({
+        ...prev,
+        ...resignedPayload,
+      }));
+  
+      notify("✅ Employee marked as resigned");
+  
+      await loadEmployees(true);
+      await loadAllUsers(true);
+    } catch (err) {
+      console.error(err);
+      notify("❌ Resign failed: " + err.message);
     }
-
-    await updateDoc(doc(db, "users", selectedEmpId), {
-      employmentStatus: "resigned",
-      lastWorkingDay: employeeForm.lastWorkingDay,
-      resignedDate: employeeForm.resignedDate,
-      updatedAt: new Date().toISOString(),
-    });
-
-    notify("✅ Employee marked as resigned");
-    await loadEmployees(true);
-    await loadAllUsers(true);
-  } catch (err) {
-    console.error(err);
-    notify("❌ Resign failed: " + err.message);
-  }
-};
-
-const restoreEmployeeActive = async () => {
-  try {
-    if (!selectedEmpId) return notify("Select employee first.");
-
-    await updateDoc(doc(db, "users", selectedEmpId), {
-      employmentStatus: "active",
-      lastWorkingDay: "",
-      resignedDate: "",
-      updatedAt: new Date().toISOString(),
-    });
-
-    notify("✅ Employee restored");
-    await loadEmployees(true);
-    await loadAllUsers(true);
-  } catch (err) {
-    console.error(err);
-    notify("❌ Restore failed: " + err.message);
-  }
-};
-
-const isResignedUser = (uid) => {
-  const u = usersMap?.[uid];
-  return (u?.employmentStatus || "active") === "resigned";
-};
+  };
+  
+  const restoreEmployeeActive = async () => {
+    try {
+      if (!selectedEmpId) return notify("Select employee first.");
+  
+      const activePayload = {
+        employmentStatus: "active",
+        lastWorkingDay: "",
+        resignedDate: "",
+        updatedAt: new Date().toISOString(),
+      };
+  
+      await updateDoc(doc(db, "users", selectedEmpId), activePayload);
+  
+      setEmployeeForm((prev) => ({
+        ...prev,
+        ...activePayload,
+      }));
+  
+      notify("✅ Employee restored");
+  
+      await loadEmployees(true);
+      await loadAllUsers(true);
+    } catch (err) {
+      console.error(err);
+      notify("❌ Restore failed: " + err.message);
+    }
+  };
+  
+  /* const isResignedUser = (uid) => {
+    const u = usersMap?.[uid];
+    return (u?.employmentStatus || "active") === "resigned";
+  }; */
+  
+  const isResignedUser = (uid) => {
+    return isEffectivelyResigned(usersMap?.[uid]);
+  };
 
 const getLastWorkingDay = (uid) => {
   return usersMap?.[uid]?.lastWorkingDay || "";
@@ -1375,22 +1435,6 @@ const loadLeaderAttendance = async (
 
   // Returns today's date in YYYY-MM-DD format (Yangon time)
 
-  const getTodayDateYangon = () => {
-  const now = new Date();
-
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Yangon",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(now);
-
-  const year = parts.find((p) => p.type === "year")?.value;
-  const month = parts.find((p) => p.type === "month")?.value;
-  const day = parts.find((p) => p.type === "day")?.value;
-
-  return `${year}-${month}-${day}`;
-};
 const [timeViewMode, setTimeViewMode] = useState(() => {
   return localStorage.getItem("timeViewMode") || "myanmar";
 });
@@ -1747,12 +1791,63 @@ useEffect(() => {
   }
 };
 
+const filteredPayrollSummaryRows = allPayroll.filter((p) => {
+  if (!payrollSummaryMonth) return true;
+
+  const monthText = String(p.month || p.paymonth || "");
+  const match = monthText.match(/\d{4}-\d{2}/);
+  const rowMonth = match ? match[0] : "";
+
+  return rowMonth === payrollSummaryMonth;
+});
+
+const sendSelectedPayslips = async () => {
+  try {
+    if (selectedPayrollIds.length === 0) {
+      return notify("Please select staff first.");
+    }
+
+    if (!window.confirm(`Send payslips to ${selectedPayrollIds.length} staff?`)) {
+      return;
+    }
+
+    setBulkSending(true);
+
+   const rows = filteredPayrollSummaryRows.filter((p) =>
+      selectedPayrollIds.includes(p.id)
+    );
+
+    for (const p of rows) {
+      await sendPayslip(p);
+
+      await updateDoc(doc(db, "payrollSummary", p.id), {
+        payslipSendStatus: "sent",
+        sentAt: new Date().toISOString(),
+        sentBy: auth.currentUser?.uid || null,
+      });
+    }
+
+    notify(`✅ Sent ${rows.length} payslip(s)`);
+    setSelectedPayrollIds([]);
+    await loadAllPayroll();
+  } catch (err) {
+    console.error(err);
+    notify("❌ Bulk send failed: " + err.message);
+  } finally {
+    setBulkSending(false);
+  }
+};
 
 useEffect(() => {
-  if (isAdmin && activeSidebar === "admin-payroll-summary") {
+  if (
+    isAdmin &&
+    canAccessPayroll &&
+    (
+      activeSidebar === "admin-payroll-summary"     )
+  ) {
     loadAllPayroll();
   }
-}, [activeSidebar, isAdmin]);
+}, [isAdmin, canAccessPayroll, activeSidebar]);
 
 
  // loadMyPayslips
@@ -2932,6 +3027,18 @@ const clockOut = async () => {
     setEditClockOut(att?.clockOutTime || (att?.clockOut ? toMyanmarTime(att.clockOut) : ""));
   };
 
+  const upsertOverviewAttendance = (row) => {
+  setOverviewAttendance((prev) => {
+    const exists = prev.some((x) => x.id === row.id);
+
+    if (exists) {
+      return prev.map((x) => (x.id === row.id ? { ...x, ...row } : x));
+    }
+
+    return [...prev, row];
+  });
+};
+
   const [selectedUserId, setSelectedUserId] = useState("");
 
   const adminCreateOrUpdateAttendance = async () => {
@@ -2973,6 +3080,20 @@ const clockOut = async () => {
         editedByAdmin: true,
         editedAt: new Date().toISOString(),
       });
+
+       const updatedRow = {
+    id: existing.id,
+    ...existing.data(),
+    userId: selectedUserId,
+    date: createDate,
+    clockIn: clockInISO,
+    clockInTime: createIn || null,
+    clockOut: clockOutISO,
+    clockOutTime: createOut || null,
+    locationName: createLocationName || existing.data().locationName || "",
+  };
+
+  upsertOverviewAttendance(updatedRow);
     } else {
       // ✅ Create new doc (for forgotten day)
       await addDoc(collection(db, "attendance"), {
@@ -2989,6 +3110,31 @@ const clockOut = async () => {
         createdAt: new Date().toISOString(),
       });
     }
+
+    const docRef = await addDoc(collection(db, "attendance"), {
+          userId: selectedUserId,
+          date: createDate,
+          clockIn: clockInISO,
+          clockInTime: createIn || null,
+          clockOut: clockOutISO,
+          clockOutTime: createOut || null,
+          locationName: createLocationName || "",
+          editedByAdmin: true,
+          editedAt: new Date().toISOString(),
+          createdByAdmin: true,
+          createdAt: new Date().toISOString(),
+        });
+    
+        upsertOverviewAttendance({
+          id: docRef.id,
+          userId: selectedUserId,
+          date: createDate,
+          clockIn: clockInISO,
+          clockInTime: createIn || null,
+          clockOut: clockOutISO,
+          clockOutTime: createOut || null,
+          locationName: createLocationName || "",
+        });
 
     notify("✅ Attendance saved");
     setCreatingAttendance(false);
@@ -3087,6 +3233,18 @@ const adminUpdateAttendanceTime = async () => {
       editedAt: new Date().toISOString(),
    });
 
+    const updatedRow = {
+    ...editingAttendance,
+    clockIn: clockInISO,
+    clockInTime: editClockIn || null,
+    clockOut: clockOutISO,
+    clockOutTime: editClockOut || null,
+    editedByAdmin: true,
+    editedAt: new Date().toISOString(),
+  };
+
+  upsertOverviewAttendance(updatedRow);
+
 
     notify("✅ Attendance updated manually");
     setEditingAttendance(null);
@@ -3094,7 +3252,8 @@ const adminUpdateAttendanceTime = async () => {
     setEditClockOut("");
 
     /* loadAllAttendance(); */
-    loadAllAttendance(attendanceMonth);
+   await loadOverviewAttendance(overviewMonth);
+    await loadAllAttendance(attendanceMonth);
   } catch (err) {
     console.error(err);
     notify("❌ Cannot update attendance: " + err.message);
@@ -4692,7 +4851,7 @@ useEffect(() => {
   const paged_mem_ot = paginate(filteredMemberOT, "mem-ot");
   const paged_month_summary = paginate(monthlySummaryByUser, "month-summary");
   const paged_leave_summary = paginate(leaveSummaryUids, "leave-summary");
-  const pagedPayroll = paginate(allPayroll, "payroll");
+  const pagedPayroll = paginate(filteredPayrollSummaryRows, "payroll");
 
   
 
@@ -7290,6 +7449,7 @@ useEffect(() => {
               <select value={overviewUserId} onChange={(e) => setOverviewUserId(e.target.value)}>
                 <option value="">-- Select staff --</option>
                 {Object.keys(usersMap || {})
+                .filter((uid) => !isEffectivelyResigned(usersMap[uid]))
                   .sort((a, b) => (usersMap[a]?.eid || "").localeCompare(usersMap[b]?.eid || ""))
                   .map((uid) => (
                     <option key={uid} value={uid}>
@@ -8375,15 +8535,53 @@ useEffect(() => {
   <section className="card">
     <h2>Payroll Summary</h2>
 
+    <div className="payroll-summary-toolbar">
+      <input
+        type="month"
+        value={payrollSummaryMonth}
+        onChange={(e) => {
+        setPayrollSummaryMonth(e.target.value);
+        setSelectedPayrollIds([]);
+        setPage("payroll", 1);
+      }}
+      />
+
+    <button
+      className="btn green"
+      onClick={sendSelectedPayslips}
+      disabled={bulkSending || selectedPayrollIds.length === 0}
+    >
+      {bulkSending
+        ? "Sending..."
+        : `Send Selected (${selectedPayrollIds.length})`}
+    </button>
+   </div>
+
     <div className="table-scroll">
       <table className="data-table payroll-summary-clean">
         <thead>
           <tr>
+            <th>
+            <input
+            type="checkbox"
+            checked={
+              filteredPayrollSummaryRows.length > 0 &&
+              selectedPayrollIds.length === filteredPayrollSummaryRows.length
+            }
+            onChange={(e) => {
+              if (e.target.checked) {
+                setSelectedPayrollIds(filteredPayrollSummaryRows.map((p) => p.id));
+              } else {
+                setSelectedPayrollIds([]);
+              }
+            }}
+          />
+          </th>
             <th>Name</th>
             <th>Employee ID</th>
             <th>Position</th>
             <th>Team</th>
-            <th>Salary<br></br>Transfer</th>
+           {/*  <th>Salary<br></br>Transfer</th> */}
             <th>Salary<br></br>in Rate</th>
             <th>Date</th>
             <th>Pay Month</th>
@@ -8392,7 +8590,7 @@ useEffect(() => {
         </thead>
 
         <tbody>
-        {allPayroll.length === 0 ? (
+        {filteredPayrollSummaryRows.length === 0 ? (
         <tr>
         <td colSpan="9">No payroll records found.</td>
         </tr>
@@ -8407,6 +8605,21 @@ useEffect(() => {
 
         return (
         <tr key={p.id}>
+        <td>
+          <input
+            type="checkbox"
+            checked={selectedPayrollIds.includes(p.id)}
+            onChange={(e) => {
+              if (e.target.checked) {
+                setSelectedPayrollIds((prev) => [...prev, p.id]);
+              } else {
+                setSelectedPayrollIds((prev) =>
+                  prev.filter((id) => id !== p.id)
+                );
+              }
+            }}
+          />
+        </td>
           <td>
             <div style={{ fontWeight: 700 }}>{enName}</div>
             {jpName && (
@@ -8420,41 +8633,25 @@ useEffect(() => {
           <td>{p.staffId}</td>
           <td>{p.staffposition}</td>
           <td>{p.staffteam}</td>
-          <td>{p.salaryTransfer?.toLocaleString()}</td>
+          {/* <td>{p.salaryTransfer?.toLocaleString()}</td> */}
           <td>{p.preferentialTotal?.toLocaleString()}</td>
           <td>{p.createdAt?.slice(0, 10)}</td>
           <td>For {p.month}</td>
           <td>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "center",
-                gap: "6px",
-                flexWrap: "wrap",
-              }}
-            >
-              <button
-                className="btn small blue"
-                onClick={() => setSelectedPayroll(p)}
-              >
+            <div className="payroll-actions">
+              <button className="btn small blue" onClick={() => setSelectedPayroll(p)}>
                 View
               </button>
-              <button
-                className="btn small green"
-                onClick={() => exportPayslip(p)}
-              >
+
+              <button className="btn small green" onClick={() => exportPayslip(p)}>
                 Download
               </button>
-              <button
-                className="btn small blue"
-                onClick={() => sendPayslip(p)}
-              >
+
+              <button className="btn small blue" onClick={() => sendPayslip(p)}>
                 Send
               </button>
-              <button
-                className="btn small red"
-                onClick={() => deletePayrollSummary(p.id)}
-              >
+
+              <button className="btn small red" onClick={() => deletePayrollSummary(p.id)}>
                 🗑
               </button>
             </div>
@@ -8467,7 +8664,7 @@ useEffect(() => {
       </table>
 
       <Pagination
-      list={allPayroll}
+      list={filteredPayrollSummaryRows}
       pageKey="payroll"
     />
 
@@ -8633,48 +8830,7 @@ useEffect(() => {
   </section>
 )}
 
-    {isAdmin && activeSidebar === "admin-export" && (
-  <section className="card">
-    <h2>Export Excel</h2>
-
-    <div className="export_excel" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-      <label style={{ fontWeight: 700 }}>Month:</label>
-      <input type="month" value={exportMonth} onChange={(e) => setExportMonth(e.target.value)} />
-
-      <label style={{ fontWeight: 700 }}>Staff:</label>
-      <select value={exportUserId} onChange={(e) => setExportUserId(e.target.value)}>
-        <option value="">-- All / Use search --</option>
-
-        {Object.entries(usersMap || {})
-          .sort(([, a], [, b]) => {
-            const ida = a?.eid || "";
-            const idb = b?.eid || "";
-            return ida.localeCompare(idb, undefined, { numeric: true });
-          })
-          .map(([uid, u]) => (
-            <option key={uid} value={uid}>
-              {u.eid || "-"} - {u.name || u.email || uid}
-            </option>
-          ))}
-      </select>
-
-      <input type="text" placeholder="Search by ID / Name / Email" value={exportUserQuery} onChange={(e) => setExportUserQuery(e.target.value)}/>
-
-      <button className="btn" onClick={() => { setExportUserId(""); setExportUserQuery(""); }}>
-        Clear Filter
-      </button>
-    </div>
-
-    <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16 }}>
-      <button className="btn blue" onClick={exportAttendanceExcelFiltered}>Export Attendance</button>
-      <button className="btn blue" onClick={exportEmployeesExcelFiltered}>Export Employees</button>
-      <button className="btn blue" onClick={exportOTExcelFiltered}>Export OT</button>
-      <button className="btn blue" onClick={exportLeaveExcelFiltered}>Export Leave</button>
-    </div>
-  </section>
-)}
-
-    {canAccessPayroll && isAdmin && activeSidebar === "admin-role-access" && (
+ {canAccessPayroll && isAdmin && activeSidebar === "admin-role-access" && (
   <section className="card">
     <h2>Staff Role Access Setting</h2>
 
@@ -8752,6 +8908,47 @@ useEffect(() => {
     />
     </section>
     )}
+
+    {isAdmin && activeSidebar === "admin-export" && (
+  <section className="card">
+    <h2>Export Excel</h2>
+
+    <div className="export_excel" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+      <label style={{ fontWeight: 700 }}>Month:</label>
+      <input type="month" value={exportMonth} onChange={(e) => setExportMonth(e.target.value)} />
+
+      <label style={{ fontWeight: 700 }}>Staff:</label>
+      <select value={exportUserId} onChange={(e) => setExportUserId(e.target.value)}>
+        <option value="">-- All / Use search --</option>
+
+        {Object.entries(usersMap || {})
+          .sort(([, a], [, b]) => {
+            const ida = a?.eid || "";
+            const idb = b?.eid || "";
+            return ida.localeCompare(idb, undefined, { numeric: true });
+          })
+          .map(([uid, u]) => (
+            <option key={uid} value={uid}>
+              {u.eid || "-"} - {u.name || u.email || uid}
+            </option>
+          ))}
+      </select>
+
+      <input type="text" placeholder="Search by ID / Name / Email" value={exportUserQuery} onChange={(e) => setExportUserQuery(e.target.value)}/>
+
+      <button className="btn" onClick={() => { setExportUserId(""); setExportUserQuery(""); }}>
+        Clear Filter
+      </button>
+    </div>
+
+    <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16 }}>
+      <button className="btn blue" onClick={exportAttendanceExcelFiltered}>Export Attendance</button>
+      <button className="btn blue" onClick={exportEmployeesExcelFiltered}>Export Employees</button>
+      <button className="btn blue" onClick={exportOTExcelFiltered}>Export OT</button>
+      <button className="btn blue" onClick={exportLeaveExcelFiltered}>Export Leave</button>
+    </div>
+  </section>
+)}
 
     </main>
     </div>
