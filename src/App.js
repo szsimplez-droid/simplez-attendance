@@ -184,7 +184,7 @@ const getCurrentMonth = () => {
 const [monthFilter, setMonthFilter] = useState(getCurrentMonth());
 const [attendanceMonthFilter, setAttendanceMonthFilter] = useState(getCurrentMonth());
 const [otMonthFilter, setOtMonthFilter] = useState(getCurrentMonth());
-
+const [editingOtId, setEditingOtId] = useState(null);
 const [poSearch, setPoSearch] = useState("");
 const [poDeptFilter, setPoDeptFilter] = useState("");
 const [poMonthFilter, setPoMonthFilter] = useState(getCurrentMonth());
@@ -4181,7 +4181,7 @@ const selectedDayIsAbsentFull =
     if (isAdmin) loadAllLeaves();
   };
 
-  const requestOvertime = async () => {
+/*   const requestOvertime = async () => {
     if (!otDate || !otStart || !otEnd || !otReason) return notify("Please fill overtime fields.");
     // calc duration simple
     const [sh, sm] = otStart.split(":").map(Number);
@@ -4203,8 +4203,84 @@ const selectedDayIsAbsentFull =
     notify("✅ Overtime request submitted.");
     loadOvertime(user.uid);
     if (isAdmin) loadAllOvertime();
-  };
+  }; */
 
+   const requestOvertime = async () => {
+    if (!otDate || !otStart || !otEnd || !otReason) {
+      return notify("Please fill overtime fields.");
+    }
+  
+    const [sh, sm] = otStart.split(":").map(Number);
+    const [eh, em] = otEnd.split(":").map(Number);
+    const totalMins = eh * 60 + em - (sh * 60 + sm);
+  
+    if (totalMins <= 0) return notify("Invalid OT time range.");
+  
+    const totalTime = `${Math.floor(totalMins / 60)}h ${totalMins % 60}m`;
+  
+    const payload = {
+      userId: user.uid,
+      date: otDate,
+      startTime: otStart,
+      endTime: otEnd,
+      totalTime,
+      reason: otReason,
+      status: "pending",
+      updatedAt: new Date().toISOString(),
+    };
+  
+    if (editingOtId) {
+      await updateDoc(doc(db, "overtimeRequests", editingOtId), payload);
+      notify("✅ Overtime request updated.");
+    } else {
+      await addDoc(collection(db, "overtimeRequests"), {
+        ...payload,
+        createdAt: new Date().toISOString(),
+      });
+      notify("✅ Overtime request submitted.");
+    }
+  
+    setOtDate("");
+    setOtStart("");
+    setOtEnd("");
+    setOtReason("");
+    setEditingOtId(null);
+  
+    await loadOvertime(user.uid);
+    if (isAdmin) await loadAllOvertime();
+  };
+  
+  const editOtRequest = (ot) => {
+    if ((ot.status || "pending") !== "pending") {
+      return notify("Only pending OT can be edited.");
+    }
+  
+    setEditingOtId(ot.id);
+    setOtDate(ot.date || "");
+    setOtStart(ot.startTime || "");
+    setOtEnd(ot.endTime || "");
+    setOtReason(ot.reason || "");
+  };
+  
+  const deleteOtRequest = async (ot) => {
+    try {
+      if (!ot?.id) return;
+      if ((ot.status || "pending") !== "pending") {
+        return notify("Only pending OT can be deleted.");
+      }
+  
+      if (!window.confirm("Delete this OT request?")) return;
+  
+      await deleteDoc(doc(db, "overtimeRequests", ot.id));
+  
+      notify("🗑 OT request deleted");
+      await loadOvertime(user.uid);
+      if (isAdmin) await loadAllOvertime();
+    } catch (err) {
+      console.error(err);
+      notify("❌ Delete OT failed: " + err.message);
+    }
+  };
 
   const updateOvertimeStatus = async (id, status) => {
   await updateDoc(doc(db, "overtimeRequests", id), {
@@ -6226,7 +6302,10 @@ useEffect(() => {
                 <input placeholder="Reason" value={otReason} onChange={e=>setOtReason(e.target.value)} />
               </div>
              <div className="form-group" style={{ alignSelf: "flex-end" }}>
-                <button className="btn submit" onClick={requestOvertime}>Submit OT</button>
+                {/* <button className="btn submit" onClick={requestOvertime}>Submit OT</button> */}
+                <button className="btn blue" onClick={requestOvertime}>
+                  {editingOtId ? "Update OT" : "Submit OT"}
+                </button>
               </div>
              
             </div>
@@ -6244,7 +6323,7 @@ useEffect(() => {
           </div>
 
             <table className="data-table">
-              <thead><tr><th>Date</th><th>Time</th><th>Total</th><th>Reason</th><th>Status</th></tr></thead>
+              <thead><tr><th>Date</th><th>Time</th><th>Total</th><th>Reason</th><th>Status</th><th>Action</th></tr></thead>
               <tbody>
               {filteredMyOvertime.length === 0 ? (
               <tr>
@@ -6260,6 +6339,30 @@ useEffect(() => {
               <td>{ot.totalTime}</td>
               <td>{ot.reason}</td>
               <td>{colorStatus(ot.status)}</td>
+              <td>{(() => {
+                  const isPending = (ot.status || "pending").toLowerCase() === "pending";
+
+                  return (
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <button
+                        className="btn small"
+                        disabled={!isPending}
+                        onClick={() => editOtRequest(ot)}
+                      >
+                        ✏ Edit
+                      </button>
+
+                      <button
+                        className="btn small red"
+                        disabled={!isPending}
+                        onClick={() => deleteOtRequest(ot)}
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  );
+                })()}
+             </td>
               </tr>
               ))
               )}
