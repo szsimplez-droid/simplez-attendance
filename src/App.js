@@ -4407,12 +4407,26 @@ const deleteLeaveRequest = async (id, leaveRow) => {
   try {
     if (!window.confirm("Delete this leave request?")) return;
 
+    const leaveRef = doc(db, "leaves", id);
+
+    const status = String(leaveRow?.status || "pending").toLowerCase();
+    const isOwner = leaveRow?.userId === user?.uid;
+
+    // STAFF: pending leave only delete leave document
+    if (isOwner && status === "pending" && !isAdmin) {
+      await deleteDoc(leaveRef);
+
+      notify("🗑 Leave request deleted");
+      await loadLeaves(user.uid);
+      return;
+    }
+
     const yearForReload = leaveRow?.startDate
       ? new Date(leaveRow.startDate).getFullYear()
       : currentYear;
 
+    // ADMIN/LEADER: approved deducted leave restore balance
     await runTransaction(db, async (tx) => {
-      const leaveRef = doc(db, "leaves", id);
       const leaveSnap = await tx.get(leaveRef);
       if (!leaveSnap.exists()) return;
 
@@ -4425,7 +4439,9 @@ const deleteLeaveRequest = async (id, leaveRow) => {
       const wasDeducted = Boolean(leave.balanceDeducted);
 
       if (status === "approved" && wasDeducted) {
-        const units = Number(leave.balanceDeductedUnits ?? calcLeaveUnits(leave));
+        const units = Number(
+          leave.balanceDeductedUnits ?? calcLeaveUnits(leave)
+        );
 
         const balRef = doc(db, "leaveBalances", `${leave.userId}_${year}`);
         const balSnap = await tx.get(balRef);
@@ -4440,7 +4456,12 @@ const deleteLeaveRequest = async (id, leaveRow) => {
 
         tx.set(
           balRef,
-          { userId: leave.userId, year, balances, updatedAt: new Date().toISOString() },
+          {
+            userId: leave.userId,
+            year,
+            balances,
+            updatedAt: new Date().toISOString(),
+          },
           { merge: true }
         );
       }
@@ -4449,8 +4470,13 @@ const deleteLeaveRequest = async (id, leaveRow) => {
     });
 
     notify("🗑 Leave request deleted");
-    loadAllLeaves();
-    loadLeaveBalances(yearForReload); // ✅ refresh correct year
+
+    if (isAdmin) {
+      await loadAllLeaves();
+      await loadLeaveBalances(yearForReload);
+    } else {
+      await loadLeaves(user.uid);
+    }
   } catch (err) {
     console.error(err);
     notify("❌ Delete failed: " + err.message);
@@ -6061,6 +6087,7 @@ useEffect(() => {
                       <td>{lv.reason}</td>
                       <td>{colorStatus(lv.status)}</td>
                       <td>
+                      <div style={{ display: "flex", gap: 10 }}>
                       <button
                         className="btn small"
                         disabled={lv.status !== "pending"}
@@ -6076,6 +6103,13 @@ useEffect(() => {
                       >
                         ✏ Edit
                       </button>
+                      <button
+                          className="btn small red"
+                          onClick={() => deleteLeaveRequest(lv.id)}
+                        >
+                          🗑️
+                        </button>
+                        </div>
                     </td>
 
                     </tr>
