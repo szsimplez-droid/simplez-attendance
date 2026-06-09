@@ -1088,6 +1088,230 @@ const createEmployeeSecondaryAuth = async () => {
   }
 };
 
+// Employee information import
+const EMPLOYEE_IMPORT_COLUMNS = [
+  "EmployeeID",
+  "EmployeeName",
+  "MyanmarName",
+  "Gender",
+  "LanguageLevel",
+  "Department",
+  "Designation",
+  "LeaderID",
+  "Rank",
+  "Pitch",
+  "JobTitleAllowance",
+  "DirectorAllowance",
+  "LanguageAllowance",
+  "Email",
+  "DOE",
+  "EmploymentType",
+  "ProbationPeriod",
+  "DOB",
+  "Role",
+  "Roles",
+  "Age",
+  "NRC",
+  "Phone",
+  "Address",
+  "ContactAddress",
+  "MaritalStatus",
+  "EmploymentStatus",
+  "LoginEmail",
+  "TempPassword",
+  "CreateLogin",
+  "LastWorkingDay",
+  "ResignedDate",
+];
+
+// download excel employee info format
+const downloadEmployeeImportFormat = () => {
+  const sample = [
+    {
+      EmployeeID: "sz0001",
+      EmployeeName: "Sample Name",
+      MyanmarName: "",
+      Gender: "Female",
+      LanguageLevel: "N2",
+      Department: "Operation",
+      Designation: "Operator",
+      LeaderID: "",
+      Rank: "D",
+      Pitch: "3.5",
+      JobTitleAllowance: 0,
+      DirectorAllowance: 0,
+      LanguageAllowance: 0,
+      Email: "sample@simplez.net",
+      DOE: "2024-06-05",
+      EmploymentType: "Permanent",
+      ProbationPeriod: "",
+      DOB: "2000-01-01",
+      Role: "staff",
+      Roles: "staff",
+      Age: "",
+      NRC: "",
+      Phone: "",
+      Address: "",
+      ContactAddress: "",
+      MaritalStatus: "",
+      EmploymentStatus: "active",
+      LoginEmail: "test@simplez.net",
+      TempPassword: "Simplez@12345",
+      CreateLogin: "yes",
+      LastWorkingDay: "",
+      ResignedDate: "",
+    },
+  ];
+
+  exportToExcel(sample, "Employee_Import_Format", "Employees");
+};
+
+
+const importEmployeeInformationExcel = async (e) => {
+  try {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!window.confirm("Import Employee Information and create login accounts?")) return;
+
+    const data = await file.arrayBuffer();
+    const wb = XLSX.read(data);
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+
+    const freshEmployees = await loadEmployees(true);
+
+    const empByCode = {};
+    freshEmployees.forEach((emp) => {
+      const code = emp.eid || emp.employeeCode;
+      if (code) empByCode[String(code).trim()] = emp;
+    });
+
+    let updated = 0;
+    let created = 0;
+    let authCreated = 0;
+    const errors = [];
+
+    for (const r of rows) {
+      try {
+        const employeeCode = String(r.EmployeeID || "").trim();
+        const employeeName = String(r.EmployeeName || "").trim();
+
+        if (!employeeCode || !employeeName) continue;
+
+        const existing = empByCode[employeeCode];
+
+        let docId = existing?.id || null;
+        let authUid = existing?.authUid || existing?.id || "";
+
+        const createLogin =
+          String(r.CreateLogin || "").toLowerCase() === "yes";
+
+        const loginEmail = String(r.LoginEmail || r.Email || "").trim();
+        const tempPassword = String(r.TempPassword || "").trim();
+
+        if (createLogin && !authUid) {
+          if (!loginEmail || !tempPassword) {
+            throw new Error(`${employeeCode}: LoginEmail/TempPassword required`);
+          }
+
+          const cred = await createUserWithEmailAndPassword(
+            secondaryAuth,
+            loginEmail,
+            tempPassword
+          );
+
+          authUid = cred.user.uid;
+          docId = authUid;
+          authCreated += 1;
+
+          await secondaryAuth.signOut();
+        }
+
+        if (!docId) {
+          docId = doc(collection(db, "users")).id;
+        }
+
+        const rolesArr = String(r.Roles || r.Role || "staff")
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean);
+
+        const payload = {
+          employeeCode,
+          eid: employeeCode,
+
+          employeeName,
+          name: employeeName,
+
+          myanmarName: r.MyanmarName || "",
+          gender: r.Gender || "",
+          languageLevel: r.LanguageLevel || "",
+          department: r.Department || "",
+          designation: r.Designation || "",
+          leaderId: r.LeaderID || "",
+
+          rank: r.Rank || "",
+          pitch: r.Pitch || "",
+          JobTitleAllowance: r.JobTitleAllowance || "",
+          DirectorAllowance: r.DirectorAllowance || "",
+          LanguageAllowance: r.LanguageAllowance || "",
+
+          email: loginEmail || r.Email || "",
+          doe: r.DOE || "",
+          joinDate: r.DOE || "",
+          employmentType: r.EmploymentType || "",
+          probationPeriod: r.ProbationPeriod || "",
+          dob: r.DOB || "",
+
+          role: r.Role || "staff",
+          roles: rolesArr.length ? rolesArr : ["staff"],
+
+          age: r.Age || "",
+          nrc: r.NRC || "",
+          phone: r.Phone || "",
+          address: r.Address || "",
+          contactAddress: r.ContactAddress || "",
+          maritalStatus: r.MaritalStatus || "",
+          employmentStatus: r.EmploymentStatus || "active",
+          lastWorkingDay: r.LastWorkingDay || "",
+          resignedDate: r.ResignedDate || "",
+
+          authUid,
+          updatedAt: new Date().toISOString(),
+          updatedBy: auth.currentUser?.uid || null,
+        };
+
+        await setDoc(doc(db, "users", docId), payload, { merge: true });
+
+        if (existing?.id) updated += 1;
+        else created += 1;
+      } catch (rowErr) {
+        console.error(rowErr);
+        errors.push(rowErr.message);
+      }
+    }
+
+    clearCache(CACHE_KEYS.employees);
+    clearCache(CACHE_KEYS.usersMap);
+
+    await loadEmployees(true);
+    await loadAllUsers(true);
+
+    notify(
+      `✅ Import done. Updated: ${updated}, Created: ${created}, Login Created: ${authCreated}`
+    );
+
+    if (errors.length > 0) {
+      alert("Some rows failed:\n" + errors.slice(0, 10).join("\n"));
+    }
+
+    e.target.value = "";
+  } catch (err) {
+    console.error(err);
+    notify("❌ Employee import failed: " + err.message);
+  }
+};
 
 
   //12/18
@@ -4902,6 +5126,89 @@ const leaveSummaryUids = Object.keys(usersMap || {})
   }
 };
 
+const fetchLeaveBalancesMap = async (year = currentYear) => {
+  const snap = await getDocs(
+    query(collection(db, "leaveBalances"), where("year", "==", year))
+  );
+
+  const map = {};
+  snap.forEach((d) => {
+    const data = d.data();
+    map[data.userId] = data;
+  });
+
+  setLeaveBalances(map);
+  return map;
+};
+
+const getLeaveExportValues = (b, type) => {
+  const base = Number(b[type]?.base ?? 0);
+  const carry = Number(b[type]?.carry ?? 0);
+  const taken = Number(b[type]?.taken ?? 0);
+  const allowance = base + carry;
+  const balance = allowance - taken;
+
+  return { base, carry, allowance, taken, balance };
+};
+
+const exportLeaveBalance = async () => {
+  try {
+    const users = await ensureUsersLoaded();
+    const balanceMap = await fetchLeaveBalancesMap(currentYear);
+
+    const targetUids = Object.keys(users || {}).filter((uid) => {
+      if (exportUserId) return uid === exportUserId;
+      return staffMatches(uid, exportUserQuery);
+    });
+
+    const rows = targetUids.map((uid) => {
+      const u = users[uid] || {};
+      const b = balanceMap[uid]?.balances || {};
+
+const annual = getLeaveExportValues(b, "Annual Leave");
+const casual = getLeaveExportValues(b, "Casual Leave");
+const medical = getLeaveExportValues(b, "Medical Leave");
+const withoutPay = getLeaveExportValues(b, "WithoutPay Leave");
+const maternity = getLeaveExportValues(b, "Maternity Leave");
+
+return {
+  Year: currentYear,
+  EmployeeID: u.eid || "",
+  Name: u.name || "",
+  Email: u.email || "",
+  Department: u.department || "",
+  Designation: u.designation || "",
+
+  AnnualAllowance: annual.allowance,
+  AnnualCarry: annual.carry,
+  AnnualTaken: annual.taken,
+  AnnualBalance: annual.balance,
+
+  CasualAllowance: casual.allowance,
+  CasualTaken: casual.taken,
+  CasualBalance: casual.balance,
+
+  MedicalAllowance: medical.allowance,
+  MedicalTaken: medical.taken,
+  MedicalBalance: medical.balance,
+
+  WithoutPayAllowance: withoutPay.allowance,
+  WithoutPayTaken: withoutPay.taken,
+  WithoutPayBalance: withoutPay.balance,
+
+  MaternityAllowance: maternity.allowance,
+  MaternityTaken: maternity.taken,
+  MaternityBalance: maternity.balance,
+};
+    });
+
+    exportToExcel(rows, `Leave_Balance_${currentYear}`, "Leave Balance");
+  } catch (err) {
+    console.error(err);
+    notify("❌ Export Leave Balance failed: " + err.message);
+  }
+};
+
   //Employee info (filter by name/id/email only)
   const exportEmployeesExcelFiltered = () => {
   const q = exportUserQuery.trim().toLowerCase();
@@ -6781,6 +7088,20 @@ useEffect(() => {
 
     </div>
 
+    <div style={{display: "flex" , justifyContent:"flex-end", marginBottom:"20px"}}>
+        <label className="btn green">
+            Import Employee Excel
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              style={{ display: "none" }}
+              onChange={importEmployeeInformationExcel}
+            />
+          </label>
+          <button className="btn blue" onClick={downloadEmployeeImportFormat} style={{marginLeft:"10px"}}>
+            Download Excel Format
+        </button>
+    </div>
 
 
     {/* Employee list (click row to edit) */}
@@ -6956,23 +7277,7 @@ useEffect(() => {
             onChange={(e) => setEmployeeForm({ ...employeeForm, dob: e.target.value })}
           />
 
-          <label>Role</label>
-          <select
-            value={employeeForm.role || "staff"}
-            onChange={(e) =>
-              setEmployeeForm({
-                ...employeeForm,
-                role: e.target.value,
-                roles: [e.target.value],
-              })
-            }
-          >
-            <option value="staff">Staff</option>
-            <option value="leader">Leader</option>
-            <option value="hr">HR</option>
-            <option value="admin">Admin</option>
-          </select>
-                
+                         
         <label style={{ fontSize: 12 }}>Employment Type</label>
         <input
           placeholder="Employment Type"
@@ -9083,6 +9388,7 @@ useEffect(() => {
       <button className="btn blue" onClick={exportEmployeesExcelFiltered}>Export Employees</button>
       <button className="btn blue" onClick={exportOTExcelFiltered}>Export OT</button>
       <button className="btn blue" onClick={exportLeaveExcelFiltered}>Export Leave</button>
+      <button className="btn blue" onClick={exportLeaveBalance}>  Export Leave Balance</button>
     </div>
   </section>
 )}
