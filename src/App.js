@@ -1649,13 +1649,14 @@ const loadLeaderAttendance = async (
   // helper: time
   // Show only time in Myanmar timezone (no date)
   const toMyanmarTime = (utcString) =>
-    utcString
-      ? new Date(utcString).toLocaleTimeString("en-GB", {
-          timeZone: "Asia/Yangon",
-          hour: "2-digit",
-          minute: "2-digit",
-        })
-      : "-";
+  utcString
+    ? new Date(utcString).toLocaleTimeString("en-GB", {
+        timeZone: "Asia/Yangon",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      })
+    : "";
 
   // Returns today's date in YYYY-MM-DD format (Yangon time)
 
@@ -3430,10 +3431,16 @@ const monthlySummaryByUser = Object.keys(usersMap || {})
   // sort by employee id order
   .sort((a, b) => (a.eid || "").localeCompare(b.eid || ""));
 
-  const makeISOFromDateAndTimeYangon = (dateStr, timeStr) => {
+const makeISOFromDateAndTimeYangon = (dateStr, timeStr) => {
   if (!dateStr || !timeStr) return null;
-  const dt = new Date(`${dateStr}T${timeStr}:00`);
-  return new Date(dt.toLocaleString("en-US", { timeZone: "Asia/Yangon" })).toISOString();
+
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const [hour, minute] = timeStr.split(":").map(Number);
+
+  // Myanmar time UTC+6:30 → UTC
+  const utcMs = Date.UTC(year, month - 1, day, hour - 6, minute - 30, 0);
+
+  return new Date(utcMs).toISOString();
 };
 
 const adminUpdateAttendanceTime = async () => {
