@@ -653,6 +653,12 @@ const clearCache = (key) => {
   return today >= resignedDate;
 };
 
+const activeUserIds = Object.keys(usersMap || {})
+  .filter((uid) => !isEffectivelyResigned(usersMap[uid]))
+  .sort((a, b) =>
+    (usersMap[a]?.eid || "").localeCompare(usersMap[b]?.eid || "")
+);
+
   const filteredEmployees = employees.filter((e) => {
   const q = empSearch.trim().toLowerCase();
 
@@ -1330,7 +1336,7 @@ const importEmployeeInformationExcel = async (e) => {
   // Leave pages search
   const [leaveSearch, setLeaveSearch] = useState("");
 
- const filteredUserIdsForLeave = Object.keys(usersMap)
+ const filteredUserIdsForLeave = activeUserIds
   .filter((uid) => {
     const q = leaveSearch.trim().toLowerCase();
     if (!q) return true;
@@ -3410,7 +3416,7 @@ const monthAttendance = (allAttendance || []).filter(
     shouldShowRecordForUser(a.userId, a.date)
 );
 
-const monthlySummaryByUser = Object.keys(usersMap || {})
+const monthlySummaryByUser = activeUserIds
   .map((uid) => {
     const rows = monthAttendance.filter((a) => a.userId === uid);
 
@@ -4963,7 +4969,7 @@ const getLeaveTaken = (uid, leaveName, year = currentYear) => {
 /* All Staff Leave Summary */
 const [leaveSummarySearch, setLeaveSummarySearch] = useState("");
 
-const leaveSummaryUids = Object.keys(usersMap || {})
+const leaveSummaryUids = activeUserIds
   .filter((uid) => {
     const q = leaveSummarySearch.trim().toLowerCase();
     if (!q) return true;
@@ -7816,13 +7822,14 @@ useEffect(() => {
             onChange={(e) => setOverviewLeaveUserId(e.target.value)}
             >
             <option value="">Select staff</option>
-            {Object.values(usersMap)
-            .sort((a, b) => (a.eid || "").localeCompare(b.eid || ""))
-            .map((u) => (
-              <option key={u.id} value={u.id}>
-                {(u.eid || "-")} - {u.name || u.email}
-              </option>
-            ))}
+            {Object.keys(usersMap || {})
+                  .filter((uid) => !isEffectivelyResigned(usersMap[uid]))
+                  .sort((a, b) => (usersMap[a]?.eid || "").localeCompare(usersMap[b]?.eid || ""))
+                  .map((uid) => (
+                    <option key={uid} value={uid}>
+                      {(usersMap[uid]?.eid || "-")} - {(usersMap[uid]?.name || usersMap[uid]?.email || uid)}
+                    </option>
+             ))}
             </select>
             </div>
 
