@@ -168,6 +168,17 @@ const [leaveToDate, setLeaveToDate] = useState("");
 const [otNameFilter, setOtNameFilter] = useState("");
 const [openLeaveBalanceRows, setOpenLeaveBalanceRows] = useState({});
 
+const [selectedLeaveUsers, setSelectedLeaveUsers] = useState([]);
+
+const [leaveRequestForUserId, setLeaveRequestForUserId] = useState("");
+const [behalfLeaveUserId, setBehalfLeaveUserId] = useState("");
+const [behalfLeaveStart, setBehalfLeaveStart] = useState("");
+const [behalfLeaveEnd, setBehalfLeaveEnd] = useState("");
+const [behalfLeaveType, setBehalfLeaveType] = useState("Full Day");
+const [behalfLeaveName, setBehalfLeaveName] = useState("Casual Leave");
+const [behalfLeaveReason, setBehalfLeaveReason] = useState("");
+const [behalfLeaves, setBehalfLeaves] = useState([]);
+
 const [attendanceSearch, setAttendanceSearch] = useState("");
 const [attendanceMonth, setAttendanceMonth] = useState(() => {
   const d = new Date();
@@ -181,6 +192,7 @@ const getCurrentMonth = () => {
   return `${year}-${month}`;
 };
 
+const [myBehalfLeaveMonth, setMyBehalfLeaveMonth] = useState(getCurrentMonth());
 const [monthFilter, setMonthFilter] = useState(getCurrentMonth());
 const [attendanceMonthFilter, setAttendanceMonthFilter] = useState(getCurrentMonth());
 const [otMonthFilter, setOtMonthFilter] = useState(getCurrentMonth());
@@ -658,6 +670,135 @@ const activeUserIds = Object.keys(usersMap || {})
   .sort((a, b) =>
     (usersMap[a]?.eid || "").localeCompare(usersMap[b]?.eid || "")
 );
+
+// behalf leave request start
+const currentUserProfile =
+  usersMap[user?.uid] ||
+  Object.values(usersMap || {}).find(
+    (u) => u.authUid === user?.uid || u.id === user?.uid || u.email === user?.email
+  ) ||
+  {};
+
+const getUserTeamKey = (u = {}) =>
+  String(
+    u.department ||
+    u.team ||
+    u.staffteam ||
+    u.staffTeam ||
+    u.teamName ||
+    ""
+  ).trim();
+
+const currentEmployeeProfile =
+  employees.find(
+    (e) =>
+      e.id === user?.uid ||
+      e.authUid === user?.uid ||
+      e.email === user?.email
+  ) ||
+  usersMap[user?.uid] ||
+  {};
+
+const currentTeam = getUserTeamKey(currentEmployeeProfile);
+
+const sameTeamUserIds = employees
+  .filter((emp) => {
+    const uid = emp.authUid || emp.id;
+
+    // remove myself
+    if (uid === user?.uid || emp.email === user?.email) return false;
+
+    // remove resigned
+    if (isEffectivelyResigned(emp)) return false;
+
+    // same team / department only
+    return currentTeam && getUserTeamKey(emp) === currentTeam;
+  })
+  .sort((a, b) =>
+    (a.eid || "").localeCompare(b.eid || "", undefined, { numeric: true })
+  )
+  .map((emp) => emp.authUid || emp.id);
+
+const loadBehalfLeaves = async () => {
+  if (!user?.uid) return;
+
+  const q = query(
+    collection(db, "leaves"),
+    where("requestedBy", "==", user.uid)
+  );
+
+  const snap = await getDocs(q);
+
+  const list = snap.docs.map((d) => ({
+    id: d.id,
+    ...d.data(),
+  }));
+
+  list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+
+  setBehalfLeaves(list);
+};
+
+const applyLeaveOnBehalf = async () => {
+  try {
+    if (!behalfLeaveUserId) return notify("Please select staff.");
+    if (!behalfLeaveStart || !behalfLeaveEnd || !behalfLeaveReason) {
+      return notify("Please fill all behalf leave fields.");
+    }
+
+    if (!sameTeamUserIds.includes(behalfLeaveUserId)) {
+      return notify("You can request only for same team members.");
+    }
+
+    const target = usersMap[behalfLeaveUserId] || {};
+    const requester = usersMap[user.uid] || {};
+
+    await addDoc(collection(db, "leaves"), {
+      userId: behalfLeaveUserId,
+
+      requestedBy: user.uid,
+      requestedFor: behalfLeaveUserId,
+      requestedByName: requester.name || "",
+      requestedForName: target.name || "",
+      requestedForEid: target.eid || "",
+      requestedTeam: target.team || target.department || "",
+
+      startDate: behalfLeaveStart,
+      endDate: behalfLeaveEnd,
+      leaveType: behalfLeaveType,
+      leaveName: behalfLeaveName,
+      reason: behalfLeaveReason,
+
+      status: "pending",
+      createdAt: new Date().toISOString(),
+    });
+
+    notify("✅ Leave request on behalf submitted");
+
+    setBehalfLeaveUserId("");
+    setBehalfLeaveStart("");
+    setBehalfLeaveEnd("");
+    setBehalfLeaveType("Full Day");
+    setBehalfLeaveName("Casual Leave");
+    setBehalfLeaveReason("");
+
+    await loadBehalfLeaves();
+  } catch (err) {
+    console.error(err);
+    notify("❌ Behalf leave submit failed: " + err.message);
+  }
+};
+
+const filteredBehalfLeaves = behalfLeaves.filter((lv) => {
+  if (!myBehalfLeaveMonth) return true;
+
+  return (
+    String(lv.startDate || "").startsWith(myBehalfLeaveMonth) ||
+    String(lv.createdAt || "").startsWith(myBehalfLeaveMonth)
+  );
+});
+
+// behalf leave request end
 
   const filteredEmployees = employees.filter((e) => {
   const q = empSearch.trim().toLowerCase();
@@ -1366,6 +1507,7 @@ const importEmployeeInformationExcel = async (e) => {
   const [gpsSettingSearch, setGpsSettingSearch] = useState("");
 
   const filteredEmployeeslocation = employees
+  .filter((emp) => !isEffectivelyResigned(emp))
   .filter((emp) => {
     const q = employeeSearch.trim().toLowerCase();
     if (!q) return true;
@@ -1393,6 +1535,7 @@ const importEmployeeInformationExcel = async (e) => {
 
 
   const filteredGpsSettingEmployees = employees
+  .filter((emp) => !isEffectivelyResigned(emp))
   .filter((emp) => {
     const q = gpsSettingSearch.trim().toLowerCase();
     if (!q) return true;
@@ -1805,9 +1948,20 @@ useEffect(() => {
 useEffect(() => {
   if (!user || activeSidebar !== "my-leave") return;
 
-  loadLeaves(user.uid);
-  loadOvertime(user.uid);
+  (async () => {
+    await loadEmployees(true);
+    await ensureUsersLoaded();
+    await loadLeaves(user.uid);
+    await loadBehalfLeaves();
+    await loadLeaveBalances();
+  })();
 }, [user, activeSidebar]);
+
+useEffect(() => {
+  if (!user || activeSidebar !== "my-ot") return;
+
+  loadOvertime(user.uid);
+}, [user, activeSidebar, myOtMonth]);
 
 useEffect(() => {
   if (!user || activeSidebar !== "my-panel") return;
@@ -4724,13 +4878,24 @@ const deleteLeaveRequest = async (id, leaveRow) => {
 
     const status = String(leaveRow?.status || "pending").toLowerCase();
     const isOwner = leaveRow?.userId === user?.uid;
+    const isRequester = leaveRow?.requestedBy === user?.uid;
+    const canStaffDeletePending = status === "pending" && !isAdmin && (isOwner || isRequester);
 
     // STAFF: pending leave only delete leave document
-    if (isOwner && status === "pending" && !isAdmin) {
+    if (canStaffDeletePending) {
       await deleteDoc(leaveRef);
 
+      setLeaves((prev) => prev.filter((x) => x.id !== id));
+      setBehalfLeaves((prev) => prev.filter((x) => x.id !== id));
+
       notify("🗑 Leave request deleted");
-      await loadLeaves(user.uid);
+
+      // do not await, background refresh only
+     /*  setTimeout(() => {
+        loadLeaves(user.uid);
+        loadBehalfLeaves();
+      }, 300); */
+
       return;
     }
 
@@ -4782,18 +4947,36 @@ const deleteLeaveRequest = async (id, leaveRow) => {
       tx.delete(leaveRef);
     });
 
+    setLeaves((prev) => {
+      const next = prev.filter((x) => x.id !== id);
+      console.log("MY LEAVES REMOVE", prev.length, next.length);
+      return next;
+    });
+
+    setBehalfLeaves((prev) => {
+      const next = prev.filter((x) => x.id !== id);
+      console.log("BEHALF REMOVE", prev.length, next.length);
+      return next;
+    });
+
+    setAllLeaves((prev) => prev.filter((x) => x.id !== id));
+
     notify("🗑 Leave request deleted");
 
     if (isAdmin) {
       await loadAllLeaves();
       await loadLeaveBalances(yearForReload);
     } else {
-      await loadLeaves(user.uid);
+      await Promise.all([
+        loadLeaves(user.uid),
+        loadBehalfLeaves(),
+        loadLeaveBalances(yearForReload),
+      ]);
     }
-  } catch (err) {
-    console.error(err);
-    notify("❌ Delete failed: " + err.message);
-  }
+    } catch (err) {
+      console.error(err);
+      notify("❌ Delete failed: " + err.message);
+    }
 };
 
 
@@ -4870,7 +5053,9 @@ const saveMyLeaveEdit = async () => {
     notify("✅ Leave request updated!");
     setEditingMyLeave(null);
 
-    loadLeaves(user.uid); // reload my leave list
+    await loadLeaves(user.uid);
+    await loadBehalfLeaves();
+
     if (isAdmin) loadAllLeaves(); // refresh admin if admin user
   } catch (err) {
     console.error(err);
@@ -5699,8 +5884,11 @@ useEffect(() => {
         <a className="nav-item" href="?tab=my-att" onClick={(e) => handleTabClick(e, "my-att")}>
           <span className="icon">🕒</span>{!desktopSidebarCollapsed && <span className="nav-text">My Attendance</span>}
         </a>
-        <a className="nav-item" href="?tab=my-leave" onClick={(e) => handleTabClick(e, "my-leave")}>
-          <span className="icon">📝</span>{!desktopSidebarCollapsed && <span className="nav-text"> My Leave / OT</span>}
+       <a className="nav-item" href="?tab=my-leave" onClick={(e) => handleTabClick(e, "my-leave")}>
+          <span className="icon">📝</span>{!desktopSidebarCollapsed && <span className="nav-text">Leave Request</span>}
+        </a>
+        <a className="nav-item" href="?tab=my-ot" onClick={(e) => handleTabClick(e, "my-ot")}>
+          <span className="icon">📝</span>{!desktopSidebarCollapsed && <span className="nav-text">My Overtime</span>}
         </a>
         <a className="nav-item" href="?tab=my-po" onClick={(e) => handleTabClick(e, "my-po")}>
           <span className="icon">📝</span>{!desktopSidebarCollapsed && <span className="nav-text"> My P/O Reports</span>}
@@ -6393,7 +6581,7 @@ useEffect(() => {
           </section>
        )}
 
-        {/* My Leave & OT */}
+        {/* My Leave request*/}
         {activeSidebar === "my-leave" && (
           <section className="card">
             <h2>Leave Request</h2>
@@ -6501,7 +6689,7 @@ useEffect(() => {
                       </button>
                       <button
                           className="btn small red"
-                          onClick={() => deleteLeaveRequest(lv.id)}
+                          onClick={() => deleteLeaveRequest(lv.id, lv)}
                         >
                           🗑️
                         </button>
@@ -6513,6 +6701,197 @@ useEffect(() => {
                 )}
               </tbody>
             </table>
+
+            <h2 style={{ marginTop: 25 }}>Leave Request on Behalf</h2>
+
+            <div
+              className="form"
+              style={{
+                display: "flex",
+                gap: 16,
+                flexWrap: "wrap",
+                alignItems: "flex-start",
+              }}
+            >
+              <div className="form-group">
+                <label>Staff</label>
+                <select
+                  value={behalfLeaveUserId}
+                  onChange={(e) => setBehalfLeaveUserId(e.target.value)}
+                >
+                  <option value="">-- Select same team member --</option>
+                  {sameTeamUserIds.map((uid) => {
+                    const emp =
+                      employees.find((e) => (e.authUid || e.id) === uid) ||
+                      usersMap[uid] ||
+                      {};
+
+                    return (
+                      <option key={uid} value={uid}>
+                        {(emp.eid || "-")} - {emp.name || emp.employeeName || emp.email}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Start Date</label>
+                <input
+                  type="date"
+                  value={behalfLeaveStart}
+                  onChange={(e) => setBehalfLeaveStart(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label>End Date</label>
+                <input
+                  type="date"
+                  value={behalfLeaveEnd}
+                  onChange={(e) => setBehalfLeaveEnd(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Leave Type</label>
+                <select
+                  value={behalfLeaveType}
+                  onChange={(e) => setBehalfLeaveType(e.target.value)}
+                >
+                  <option>Full Day</option>
+                  <option>Morning Half</option>
+                  <option>Evening Half</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Leave Name</label>
+                <select
+                  value={behalfLeaveName}
+                  onChange={(e) => setBehalfLeaveName(e.target.value)}
+                >
+                  <option>Casual Leave</option>
+                  <option>Annual Leave</option>
+                  <option>WithoutPay Leave</option>
+                  <option>Medical Leave</option>
+                  <option>Maternity Leave</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Reason</label>
+                <input
+                  type="text"
+                  placeholder="Reason"
+                  value={behalfLeaveReason}
+                  onChange={(e) => setBehalfLeaveReason(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group" style={{ alignSelf: "flex-end" }}>
+                <button className="btn submit" onClick={applyLeaveOnBehalf}>
+                  Submit Behalf Leave
+                </button>
+              </div>
+            </div>
+
+            <h3 style={{ marginTop: 25 }}>Leave Requests on Behalf</h3>
+
+            <div className="myleave_table">
+              <input
+                type="month"
+                value={myBehalfLeaveMonth}
+                onChange={(e) => setMyBehalfLeaveMonth(e.target.value)}
+              />
+              <button className="btn" onClick={() => setMyBehalfLeaveMonth("")}>
+                Clear
+              </button>
+            </div>
+
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Staff</th>
+                  <th>Apply Date</th>
+                  <th>LeaveStart</th>
+                  <th>LeaveEnd</th>
+                  <th>LeaveType</th>
+                  <th>LeaveName</th>
+                  <th>Reason</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {filteredBehalfLeaves.length === 0 ? (
+                  <tr>
+                    <td colSpan="9" style={{ textAlign: "center", padding: "20px" }}>
+                      No behalf leave requests.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredBehalfLeaves.map((lv) => (
+                    <tr key={lv.id}>
+                      <td>
+                        {lv.requestedForEid || displayEmpId(lv.userId)} -{" "}
+                        {lv.requestedForName || displayUser(lv.userId)}
+                      </td>
+                      <td>{lv.createdAt?.split("T")[0]}</td>
+                      <td>{lv.startDate}</td>
+                      <td>{lv.endDate}</td>
+                      <td>{lv.leaveType}</td>
+                      <td>{lv.leaveName}</td>
+                      <td>{lv.reason}</td>
+                      <td>{colorStatus(lv.status)}</td>
+                      <td>
+                      {(() => {
+                        const isPending =
+                          String(lv.status || "pending").toLowerCase() === "pending";
+
+                        return (
+                          <div style={{ display: "flex", gap: 10 }}>
+                            <button
+                              className="btn small"
+                              disabled={!isPending}
+                              style={{
+                                opacity: !isPending ? 0.6 : 1,
+                                cursor: !isPending ? "not-allowed" : "pointer",
+                                color: "#000",
+                              }}
+                              onClick={() => {
+                                if (!isPending) return;
+                                openLeaveEditModal(lv);
+                              }}
+                            >
+                              ✏ Edit
+                            </button>
+
+                            <button
+                              className="btn small red"
+                              disabled={!isPending}
+                              style={{
+                                opacity: !isPending ? 0.6 : 1,
+                                cursor: !isPending ? "not-allowed" : "pointer",
+                              }}
+                              onClick={() => {
+                                if (!isPending) return;
+                                deleteLeaveRequest(lv.id, lv);
+                              }}
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        );
+                      })()}
+                    </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+
             {editingMyLeave && (
               <div className="modal-overlay" onClick={() => setEditingMyLeave(null)}>
                 <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -6602,7 +6981,13 @@ useEffect(() => {
 
             </table>
 
-            
+               
+          </section>
+      )}
+
+      {activeSidebar === "my-ot" && (
+        <section className="card">
+          
             <h2 style={{marginTop:20}}>Overtime Request</h2>
             <div className="form" style={{display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start"}}>
               <div className="form-group">
@@ -7810,90 +8195,6 @@ useEffect(() => {
           {isAdmin && activeSidebar === "admin-att-overview" && (
           <section className="card">
           <h2>Attendance Overview (Calendar)</h2>
-
-            <div className="card" style={{ marginBottom: 16 }}>
-            <h3>Add Leave for Staff</h3>
-
-            <div className="form" style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <div className="form-group">
-            <label>Staff</label>
-            <select
-            value={overviewLeaveUserId}
-            onChange={(e) => setOverviewLeaveUserId(e.target.value)}
-            >
-            <option value="">Select staff</option>
-            {Object.keys(usersMap || {})
-                  .filter((uid) => !isEffectivelyResigned(usersMap[uid]))
-                  .sort((a, b) => (usersMap[a]?.eid || "").localeCompare(usersMap[b]?.eid || ""))
-                  .map((uid) => (
-                    <option key={uid} value={uid}>
-                      {(usersMap[uid]?.eid || "-")} - {(usersMap[uid]?.name || usersMap[uid]?.email || uid)}
-                    </option>
-             ))}
-            </select>
-            </div>
-
-            <div className="form-group">
-            <label>Start Date</label>
-            <input
-            type="date"
-            value={overviewLeaveStart}
-            onChange={(e) => setOverviewLeaveStart(e.target.value)}
-            />
-            </div>
-
-            <div className="form-group">
-            <label>End Date</label>
-            <input
-            type="date"
-            value={overviewLeaveEnd}
-            onChange={(e) => setOverviewLeaveEnd(e.target.value)}
-            />
-            </div>
-
-            <div className="form-group">
-            <label>Leave Type</label>
-            <select
-            value={overviewLeaveType}
-            onChange={(e) => setOverviewLeaveType(e.target.value)}
-            >
-            <option>Full Day</option>
-            <option>Morning Half</option>
-            <option>Evening Half</option>
-            </select>
-            </div>
-
-            <div className="form-group">
-            <label>Leave Name</label>
-            <select
-            value={overviewLeaveName}
-            onChange={(e) => setOverviewLeaveName(e.target.value)}
-            >
-            <option>Casual Leave</option>
-            <option>Annual Leave</option>
-            <option>Medical Leave</option>
-            <option>WithoutPay Leave</option>
-            <option>Maternity Leave</option>
-            </select>
-            </div>
-
-            <div className="form-group" style={{ minWidth: 220 }}>
-            <label>Reason</label>
-            <input
-            type="text"
-            value={overviewLeaveReason}
-            onChange={(e) => setOverviewLeaveReason(e.target.value)}
-            placeholder="Reason"
-            />
-            </div>
-
-            <div className="form-group" style={{ alignSelf: "flex-end" }}>
-            <button className="btn submit" onClick={adminCreateLeaveForStaff}>
-            Add Leave
-            </button>
-            </div>
-            </div>
-            </div>
 
           <div className="att_overview">
             <div className="att_overview_flex w18">

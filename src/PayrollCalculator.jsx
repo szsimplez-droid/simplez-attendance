@@ -497,8 +497,28 @@ const sanitizeForFirestore = (obj) => {
 
   const preferentialTotal = usdConversion * data.cbRate;
 
+/* const sortedUsers = Object.entries(usersMap)
+  .sort(([, a], [, b]) => a.eid.localeCompare(b.eid)); */
+
+   const isEffectivelyResigned = (u) => {
+  if (!u) return false;
+
+  const status = u.employmentStatus || "active";
+  if (status !== "resigned") return false;
+
+  if (!u.resignedDate) return true;
+
+  const today = new Date().toISOString().slice(0, 10);
+  return today >= u.resignedDate;
+};
+
 const sortedUsers = Object.entries(usersMap)
-  .sort(([, a], [, b]) => a.eid.localeCompare(b.eid));
+  .filter(([, user]) => !isEffectivelyResigned(user))
+  .sort(([, a], [, b]) =>
+    (a.eid || "").localeCompare(b.eid || "", undefined, {
+      numeric: true,
+    })
+  );
 
 
   /* When user changes → load their draft */
