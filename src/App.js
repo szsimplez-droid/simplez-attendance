@@ -753,6 +753,18 @@ const applyLeaveOnBehalf = async () => {
     const target = usersMap[behalfLeaveUserId] || {};
     const requester = usersMap[user.uid] || {};
 
+    if (
+      !validateLeaveBalanceBeforeSubmit(
+        behalfLeaveUserId,
+        behalfLeaveName,
+        behalfLeaveType,
+        behalfLeaveStart,
+        behalfLeaveEnd
+      )
+    ) {
+      return;
+    }
+
     await addDoc(collection(db, "leaves"), {
       userId: behalfLeaveUserId,
 
@@ -4167,23 +4179,47 @@ const leaderUpdateAttendanceTime = async () => {
 
   const summaryLeaveTypes = ["Casual Leave", "Annual Leave", "Medical Leave","WithoutPay Leave", "Maternity Leave",];
   const saveLeaveBalance = async (uid) => {
-    const data = leaveBalances[uid];
-    if (!data) return;
-
-    await setDoc(
-      doc(db, "leaveBalances", `${uid}_${currentYear}`),
-      {
-        userId: uid,
-        year: currentYear,
-        balances: data.balances,
-        updatedAt: new Date().toISOString()
-      },
-      { merge: true }
-    );
-    await loadLeaveBalances();  // reload whole map
-
-    notify("✅ Leave balance saved");
-  };
+      const data = leaveBalances[uid];
+      if (!data) return;
+  
+      const balances = { ...(data.balances || {}) };
+  
+      const casual = { ...(balances["Casual Leave"] || {}) };
+      const annual = { ...(balances["Annual Leave"] || {}) };
+  
+      const casualMax = Number(casual.base || casual.total || 6);
+      const casualTaken = Number(casual.taken || 0);
+  
+      const overflow = Math.max(0, casualTaken - casualMax);
+  
+      // ✅ Casual cannot exceed 6
+      casual.base = casualMax;
+      casual.carry = 0;
+      casual.total = casualMax;
+      casual.taken = Math.min(casualTaken, casualMax);
+  
+      // ✅ Add overflow to Annual taken
+      if (overflow > 0) {
+        annual.taken = Number(annual.taken || 0) + overflow;
+      }
+  
+      balances["Casual Leave"] = casual;
+      balances["Annual Leave"] = annual;
+  
+      await setDoc(
+        doc(db, "leaveBalances", `${uid}_${currentYear}`),
+        {
+          userId: uid,
+          year: currentYear,
+          balances,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+  
+      await loadLeaveBalances();
+      notify("✅ Leave balance saved");
+    };
 
 
   useEffect(() => {
@@ -4562,8 +4598,97 @@ const selectedDayIsAbsentFull =
    };
 
   /* ---------------- leave & overtime (staff) ---------------- */
+  const getLeaveAllowanceTakenBalance = (uid, type) => {
+    const balances = leaveBalances?.[uid]?.balances || {};
+
+    const b = balances[type] || {};
+    const annual = balances["Annual Leave"] || {};
+    const casual = balances["Casual Leave"] || {};
+
+    const base = Number(b.base || 0);
+    const carry = type === "Annual Leave" ? Number(b.carry || 0) : 0;
+    const total = Number(b.total ?? base + carry);
+
+    let allowance = total || base + carry;
+    let takenRaw = Number(b.taken || 0);
+
+    // ✅ Casual overflow moves to Annual display
+    const casualBase = Number(casual.base || casual.total || 6);
+    const casualTakenRaw = Number(casual.taken || 0);
+    const casualOverflow = Math.max(0, casualTakenRaw - casualBase);
+
+    if (type === "Casual Leave") {
+      allowance = casualBase;
+      takenRaw = Math.min(casualTakenRaw, casualBase);
+
+      return {
+        allowance,
+        taken: takenRaw,
+        balance: Math.max(0, allowance - takenRaw),
+        takenRaw: casualTakenRaw,
+      };
+    }
+
+    if (type === "Annual Leave") {
+      takenRaw = Number(annual.taken || 0) + casualOverflow;
+    }
+
+    const taken = takenRaw;
+    const balance = Math.max(0, allowance - taken);
+
+    return { allowance, taken, balance, takenRaw };
+  };
+  
+    const isCasualLeaveUsedAll = (uid) => {
+      const { balance } = getLeaveAllowanceTakenBalance(uid, "Casual Leave");
+      return balance <= 0;
+    };
+  
+    const validateLeaveBalanceBeforeSubmit = (uid, lName, lType, start, end) => {
+      if (lName !== "Casual Leave") return true;
+  
+      const units = calcLeaveUnits({
+        startDate: start,
+        endDate: end,
+        leaveType: lType,
+      });
+  
+      const { balance } = getLeaveAllowanceTakenBalance(uid, "Casual Leave");
+  
+      if (balance <= 0) {
+        notify("❌ Casual Leave balance is already 0. You cannot submit Casual Leave.");
+        return false;
+      }
+  
+      if (units > balance) {
+        notify(`❌ Casual Leave balance is only ${balance} day(s).`);
+        return false;
+      }
+  
+      return true;
+    };
+  
+    useEffect(() => {
+    if (user?.uid && leaveName === "Casual Leave" && isCasualLeaveUsedAll(user.uid)) {
+      setLeaveName("Annual Leave");
+    }
+  }, [user?.uid, leaveBalances, leaveName]);
+  
+  useEffect(() => {
+    if (
+      behalfLeaveUserId &&
+      behalfLeaveName === "Casual Leave" &&
+      isCasualLeaveUsedAll(behalfLeaveUserId)
+    ) {
+      setBehalfLeaveName("Annual Leave");
+    }
+  }, [behalfLeaveUserId, leaveBalances, behalfLeaveName]);
+
   const applyLeave = async () => {
     if (!leaveStart || !leaveEnd || !leaveReason) return notify("Please fill leave start, end and reason.");
+    if (!validateLeaveBalanceBeforeSubmit(user.uid, leaveName, leaveType, leaveStart, leaveEnd)) {
+      return;
+    }
     await addDoc(collection(db, "leaves"), {
       userId: user.uid,
       startDate: leaveStart,
@@ -6627,7 +6752,9 @@ useEffect(() => {
           <div className="form-group">
             <label>Leave Name</label>
             <select value={leaveName} onChange={(e) => setLeaveName(e.target.value)}>
-              <option>Casual Leave</option>
+              <option value="Casual Leave" disabled={isCasualLeaveUsedAll(user?.uid)}>
+                Casual Leave {isCasualLeaveUsedAll(user?.uid) ? "(Used All)" : ""}
+              </option>
               <option>Annual Leave</option>
               <option>WithoutPay Leave</option>
               <option>Medical Leave</option>
@@ -6790,7 +6917,9 @@ useEffect(() => {
                   value={behalfLeaveName}
                   onChange={(e) => setBehalfLeaveName(e.target.value)}
                 >
-                  <option>Casual Leave</option>
+                  <option value="Casual Leave" disabled={isCasualLeaveUsedAll(behalfLeaveUserId)}>
+                    Casual Leave {isCasualLeaveUsedAll(behalfLeaveUserId) ? "(Used All)" : ""}
+                  </option>
                   <option>Annual Leave</option>
                   <option>WithoutPay Leave</option>
                   <option>Medical Leave</option>
@@ -8934,14 +9063,33 @@ useEffect(() => {
           const manualTaken = getBal(uid, t.key, "taken");
           const computedTaken = getLeaveTaken(uid, t.key);
 
-          const taken =
+          let taken =
             manualTaken !== "" &&
             manualTaken !== null &&
             manualTaken !== undefined
               ? Number(manualTaken)
               : Number(computedTaken);
 
-          const balance = allowance - taken;
+          // ✅ Casual overflow
+          const casualRawTaken = Number(
+            leaveBalances?.[uid]?.balances?.["Casual Leave"]?.taken || 0
+          );
+          const casualMax = Number(
+            leaveBalances?.[uid]?.balances?.["Casual Leave"]?.base ||
+            leaveBalances?.[uid]?.balances?.["Casual Leave"]?.total ||
+            6
+          );
+          const casualOverflow = Math.max(0, casualRawTaken - casualMax);
+
+          if (t.key === "Casual Leave") {
+            taken = Math.min(taken, casualMax);
+          }
+
+          if (t.key === "Annual Leave") {
+            taken = taken + casualOverflow;
+          }
+
+          const balance = Math.max(0, allowance - taken);
 
           return (
             <div
@@ -9003,8 +9151,19 @@ useEffect(() => {
 
                 <input
                   type="number"
+                  min="0"
+                  max={t.key === "Casual Leave" ? Number(base || 6) : undefined}
                   value={taken}
-                  onChange={(e) => setValue(t.key, "taken", e.target.value)}
+                  onChange={(e) => {
+                    let value = Number(e.target.value || 0);
+
+                    if (t.key === "Casual Leave") {
+                      const maxCasual = Number(base || 6);
+                      value = Math.min(value, maxCasual);
+                    }
+
+                    setValue(t.key, "taken", value);
+                  }}
                   placeholder="Taken"
                   style={{ width: 55 }}
                 />
@@ -9143,14 +9302,20 @@ useEffect(() => {
                       ? (leaveBalances?.[uid]?.balances?.[selectedType]?.carry ?? 0)
                       : 0;
 
-                  const allowance = Number(base) + Number(carry);
+                 /*  const allowance = Number(base) + Number(carry); */
 
                   // ✅ Taken from leaveBalances (manual admin edit)
-                  const taken = Number(
+                 /*  const taken = Number(
                     leaveBalances?.[uid]?.balances?.[selectedType]?.taken ?? 0
-                  );
+                  ); */
 
-                  const balance = Math.max(0, allowance - taken);
+                  /* const balance = Math.max(0, allowance - taken); */
+
+                  const values = getLeaveAllowanceTakenBalance(uid, selectedType);
+
+                  const allowance = values.allowance;
+                  const taken = values.taken;
+                  const balance = values.balance;
 
                   return (
                     <tr key={uid}>
