@@ -2272,6 +2272,19 @@ useEffect(() => {
 
 
   // PaySlip  Admin
+  const getEnglishNameOnly = (name = "") => {
+    return String(name)
+      .replace(/[\u3040-\u30ff\u3400-\u9fff]+.*$/g, "")
+      .trim();
+  };
+
+  const safeFileName = (text = "") => {
+    return String(text)
+      .replace(/[\\/:*?"<>|]/g, "")
+      .replace(/\s+/g, "_")
+      .trim();
+  };
+
   const exportPayslip = (p) => {
   const doc = new jsPDF("p", "mm", "a4");
   doc.setFontSize(16);
@@ -2281,10 +2294,16 @@ useEffect(() => {
   doc.text("Payslip", 105, 20, { align: "center" });
 
   doc.setFontSize(10);
-  doc.text(`Name: ${p.name || ""}`, 14, 30);
+  const payName = getEnglishNameOnly(p.name || "");
+  const payMonth = String(p.month || "").replace("For ", "").slice(0, 7);
+  doc.text(`Name: ${payName}`, 14, 30);
+
   doc.text(`Team: ${p.staffteam || ""}`, 14, 36);
+
   doc.text(`Position: ${p.staffposition || ""}`, 14, 42);
+
   doc.text(`Date: ${p.createdAt?.slice(0,10)}`, 150, 30);
+
   doc.text(`For The Month of: ${p.month.slice(0,10)}`, 150, 35);
 
   // Days Table
@@ -2422,7 +2441,7 @@ useEffect(() => {
   doc.text("Payment Date: " + (p.createdAt?.slice(0,10) || ""), 14, doc.lastAutoTable.finalY + 20);
   doc.text("Signature: ____________________", 150, doc.lastAutoTable.finalY + 20);
 
-  doc.save(`${p.name || "payslip"}.pdf`);
+  doc.save(`${safeFileName(payName || "payslip")}_${payMonth || "month"}.pdf`);
   };
 
 
