@@ -6944,7 +6944,7 @@ useEffect(() => {
               </div>
             </div>
 
-            <h3 style={{ marginTop: 25 }}>Leave Requests on Behalf</h3>
+            <h3 style={{ marginTop: 25 }}>My Team Member Leave request</h3>
 
             <div className="myleave_table">
               <input
@@ -9296,22 +9296,7 @@ useEffect(() => {
                   const selectedType = leaveSelections[uid] || "Casual Leave";
 
                   // ✅ Allowance from leaveBalances (carry only for Annual Leave)
-                  const base = leaveBalances?.[uid]?.balances?.[selectedType]?.base ?? 0;
-                  const carry =
-                    selectedType === "Annual Leave"
-                      ? (leaveBalances?.[uid]?.balances?.[selectedType]?.carry ?? 0)
-                      : 0;
-
-                 /*  const allowance = Number(base) + Number(carry); */
-
-                  // ✅ Taken from leaveBalances (manual admin edit)
-                 /*  const taken = Number(
-                    leaveBalances?.[uid]?.balances?.[selectedType]?.taken ?? 0
-                  ); */
-
-                  /* const balance = Math.max(0, allowance - taken); */
-
-                  const values = getLeaveAllowanceTakenBalance(uid, selectedType);
+                 const values = getLeaveAllowanceTakenBalance(uid, selectedType);
 
                   const allowance = values.allowance;
                   const taken = values.taken;
