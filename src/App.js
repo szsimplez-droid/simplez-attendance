@@ -515,12 +515,86 @@ const openNotification = (n) => {
     window.history.pushState({}, "", "?tab=my-payslip");
   }
 
-  if (n.type === "leave") {
+ /*  if (n.type === "leave") {
     setActiveSidebar("my-leave");
     window.history.pushState({}, "", "?tab=my-leave");
+  } */
+
+  if (n.type === "leave") {
+    setActiveSidebar(isLeader ? "member-leave-panel" : "my-leave");
+    window.history.pushState(
+      {},
+      "",
+      isLeader ? "?tab=member-leave-panel" : "?tab=my-leave"
+    );
   }
 
   setShowNoti(false);
+};
+
+const notifyLeaderForLeaveRequest = async (targetUserId, leaveData) => {
+  try {
+    const users = await ensureUsersLoaded();
+
+    const target =
+      users[targetUserId] ||
+      Object.values(users || {}).find(
+        (u) => u.authUid === targetUserId || u.id === targetUserId
+      ) ||
+      {};
+
+    const targetDept = target.department || target.team || "";
+
+    let leaderIds = [];
+
+    // 1) employee profile has leaderId
+    if (target.leaderId) {
+      leaderIds.push(target.leaderId);
+    }
+
+    // 2) fallback: same department leaders
+    Object.entries(users || {}).forEach(([uid, u]) => {
+      const rolesArr = u.roles || [];
+      const isLeaderUser = u.role === "leader" || rolesArr.includes("leader");
+      const sameDept = targetDept && (u.department || u.team || "") === targetDept;
+
+      if (isLeaderUser && sameDept && uid !== targetUserId) {
+        leaderIds.push(uid);
+      }
+    });
+
+    leaderIds = [...new Set(leaderIds)].filter(Boolean);
+
+    console.log("LEAVE NOTI DEBUG", {
+      targetUserId,
+      target,
+      targetDept,
+      leaderIds,
+    });
+
+    if (leaderIds.length === 0) {
+      notify("⚠️ No leader found for this staff.");
+      return;
+    }
+
+    for (const leaderId of leaderIds) {
+      await addDoc(collection(db, "notifications"), {
+        userId: leaderId,
+        type: "leave",
+        title: "New Leave Request",
+        message: `${target.eid || ""} ${target.name || target.email || ""} requested ${leaveData.leaveName}`,
+        leaveUserId: targetUserId,
+        startDate: leaveData.startDate || "",
+        endDate: leaveData.endDate || "",
+        leaveName: leaveData.leaveName || "",
+        date: serverTimestamp(),
+        read: false,
+      });
+    }
+  } catch (err) {
+    console.error("notifyLeaderForLeaveRequest failed:", err);
+    notify("❌ Leader notification failed: " + err.message);
+  }
 };
 
 // notifications end
@@ -783,6 +857,13 @@ const applyLeaveOnBehalf = async () => {
 
       status: "pending",
       createdAt: new Date().toISOString(),
+    });
+
+    await notifyLeaderForLeaveRequest(behalfLeaveUserId, {
+      leaveName: behalfLeaveName,
+      leaveType: behalfLeaveType,
+      startDate: behalfLeaveStart,
+      endDate: behalfLeaveEnd,
     });
 
     notify("✅ Leave request on behalf submitted");
@@ -4708,6 +4789,13 @@ const selectedDayIsAbsentFull =
       adminActionAt: null,
 
       createdAt: new Date().toISOString(),
+    });
+
+     await notifyLeaderForLeaveRequest(user.uid, {
+      leaveName,
+      leaveType,
+      startDate: leaveStart,
+      endDate: leaveEnd,
     });
 
     setLeaveStart(""); setLeaveEnd(""); setLeaveReason("");
