@@ -2175,6 +2175,16 @@ useEffect(() => {
 }, [user, isAdmin, activeSidebar]);
 
 useEffect(() => {
+  if (!user || !isAdmin || activeSidebar !== "admin-leave-anniversary") return;
+
+  (async () => {
+    await loadEmployees(true);
+    await ensureUsersLoaded();
+    await loadLeaveBalances(currentYear);
+  })();
+}, [user, isAdmin, activeSidebar]);
+
+useEffect(() => {
   if (!user || !isLeader || activeSidebar !== "member-att-panel") return;
 
   (async () => {
@@ -4257,6 +4267,207 @@ const leaderUpdateAttendanceTime = async () => {
     setLeaveBalances(map);
   };
 
+  // auto adjust leave accroding to DOE start
+    const normalizeDateStr = (value) => {
+    if (!value) return "";
+    return String(value).replaceAll("/", "-").slice(0, 10);
+  };
+  
+  const getAnniversaryDate = (doe, year) => {
+    const d = normalizeDateStr(doe);
+    if (!d) return "";
+  
+    const [, month, day] = d.split("-");
+    return `${year}-${month}-${day}`;
+  };
+  
+  const hasReachedAnniversary = (emp, year) => {
+    const doe = emp.doe || emp.joinDate || emp.dateOfEmployment;
+    if (!doe) return false;
+  
+    return getTodayDateYangon() >= getAnniversaryDate(doe, year);
+  };
+  
+  // admin leave anniversy start
+  
+  const getDoeValue = (emp = {}) =>
+    normalizeDateStr(emp.doe || emp.joinDate || emp.dateOfEmployment || "");
+  
+  const getAnnualLeaveAnniversaryRows = () => {
+    return employees
+      .filter((emp) => !isEffectivelyResigned(emp))
+      .map((emp) => {
+        const uid = emp.authUid || emp.id;
+        const doe = getDoeValue(emp);
+        const annDate = doe ? getAnniversaryDate(doe, currentYear) : "";
+  
+        const annual = leaveBalances?.[uid]?.balances?.["Annual Leave"] || {};
+        const casual = leaveBalances?.[uid]?.balances?.["Casual Leave"] || {};
+  
+        const annualBase = Number(annual.base || 0);
+        const annualCarry = Number(annual.carry || 0);
+        const annualTaken = Number(annual.taken || 0);
+        const annualTotal = Math.min(annualBase + annualCarry, 20);
+        const annualBalance = Math.max(0, annualTotal - annualTaken);
+  
+        const casualTaken = Number(casual.taken || 0);
+        const casualBalance = Math.max(0, 6 - casualTaken);
+  
+        const reached = annDate ? getTodayDateYangon() >= annDate : false;
+  
+        return {
+          uid,
+          eid: emp.eid || emp.employeeCode || "",
+          name: emp.name || emp.employeeName || "",
+          department: emp.department || emp.team || "",
+          doe,
+          anniversaryDate: annDate,
+          reached,
+          annualBase,
+          annualCarry,
+          annualTaken,
+          annualTotal,
+          annualBalance,
+          casualTaken,
+          casualBalance,
+        };
+      })
+      .sort((a, b) => (a.anniversaryDate || "").localeCompare(b.anniversaryDate || ""));
+  };
+  
+  const autoAdjustOneStaffAnnualLeave = async (uid) => {
+    setSelectedLeaveUsers([uid]);
+  
+    setTimeout(() => {
+      autoAdjustLeaveBalances();
+    }, 0);
+  };
+  
+  //end 
+  
+  const autoAdjustLeaveBalances = async () => {
+    try {
+     if (
+        !window.confirm(
+          `Auto adjust leave balances for ${selectedLeaveUsers.length} selected staff?`
+        )
+      ) return;
+  
+      const year = currentYear;
+      const prevYear = year - 1;
+  
+      const freshEmployees = await loadEmployees(true);
+  
+      const targetEmployees = freshEmployees.filter((emp) => {
+        const uid = emp.authUid || emp.id;
+  
+        return (
+          selectedLeaveUsers.includes(uid) &&
+          !isEffectivelyResigned(emp)
+        );
+      });
+  
+      if (targetEmployees.length === 0) {
+        return notify("Please select staff first.");
+      }
+  
+      const prevSnap = await getDocs(
+        query(collection(db, "leaveBalances"), where("year", "==", prevYear))
+      );
+  
+      const prevMap = {};
+      prevSnap.forEach((d) => {
+        prevMap[d.data().userId] = d.data();
+      });
+  
+      const batch = writeBatch(db);
+  
+      targetEmployees.forEach((emp) => {
+          const uid = emp.authUid || emp.id;
+          const current = leaveBalances[uid]?.balances || {};
+          const prev = prevMap[uid]?.balances || {};
+  
+          const annualTaken = Number(current["Annual Leave"]?.taken || 0);
+          const prevAnnualBase = Number(prev["Annual Leave"]?.base || 0);
+          const prevAnnualCarry = Number(prev["Annual Leave"]?.carry || 0);
+          const prevAnnualTaken = Number(prev["Annual Leave"]?.taken || 0);
+  
+          const prevRemain = Math.max(
+            0,
+            prevAnnualBase + prevAnnualCarry - prevAnnualTaken
+          );
+  
+          const annualBase = hasReachedAnniversary(emp, year) ? 10 : 0;
+          const annualCarry = Math.min(prevRemain, 10);
+          const annualTotal = Math.min(annualBase + annualCarry, 20);
+  
+          const casualTaken = Number(current["Casual Leave"]?.taken || 0);
+          const medicalTaken = Number(current["Medical Leave"]?.taken || 0);
+          const withoutPayTaken = Number(current["WithoutPay Leave"]?.taken || 0);
+          const maternityTaken = Number(current["Maternity Leave"]?.taken || 0);
+  
+          const balances = {
+            ...current,
+  
+            "Annual Leave": {
+              base: annualBase,
+              carry: annualCarry,
+              taken: annualTaken,
+              total: annualTotal,
+            },
+  
+            "Casual Leave": {
+              base: 6,
+              carry: 0,
+              taken: casualTaken,
+              total: 6,
+            },
+  
+            "Medical Leave": {
+              base: Number(current["Medical Leave"]?.base ?? 30),
+              carry: 0,
+              taken: medicalTaken,
+              total: Number(current["Medical Leave"]?.base ?? 30),
+            },
+  
+            "WithoutPay Leave": {
+              base: Number(current["WithoutPay Leave"]?.base ?? 0),
+              carry: 0,
+              taken: withoutPayTaken,
+              total: Number(current["WithoutPay Leave"]?.base ?? 0),
+            },
+  
+            "Maternity Leave": {
+              base: Number(current["Maternity Leave"]?.base ?? 98),
+              carry: 0,
+              taken: maternityTaken,
+              total: Number(current["Maternity Leave"]?.base ?? 98),
+            },
+          };
+  
+          batch.set(
+            doc(db, "leaveBalances", `${uid}_${year}`),
+            {
+              userId: uid,
+              year,
+              balances,
+              updatedAt: new Date().toISOString(),
+              autoAdjustedAt: new Date().toISOString(),
+            },
+            { merge: true }
+          );
+        });
+  
+      await batch.commit();
+      await loadLeaveBalances(year);
+  
+      notify("✅ Leave balances auto adjusted");
+    } catch (err) {
+      console.error(err);
+      notify("❌ Auto adjust failed: " + err.message);
+    }
+  };
+   // auto adjust leave accroding to DOE end //
 
   const summaryLeaveTypes = ["Casual Leave", "Annual Leave", "Medical Leave","WithoutPay Leave", "Maternity Leave",];
   const saveLeaveBalance = async (uid) => {
@@ -6232,6 +6443,9 @@ useEffect(() => {
             </a>
             <a className="nav-item" href="?tab=admin-leave-summary" onClick={(e) => handleTabClick(e, "admin-leave-summary")}>
               <span className="icon">📝</span> {!desktopSidebarCollapsed && <span className="nav-text">All Staff Leave Summary</span>}
+            </a>
+            <a className="nav-item" href="?tab=admin-leave-anniversary" onClick={(e) => handleTabClick(e, "admin-leave-anniversary")}>
+                <span className="icon">📅</span>{!desktopSidebarCollapsed && (<span className="nav-text">Annual Leave Anniversary</span>)}
             </a>
             <a className="nav-item" href="?tab=admin-po" onClick={(e) => handleTabClick(e, "admin-po")}>
               <span className="icon">💼</span> {!desktopSidebarCollapsed && <span className="nav-text">All Staff P/O Reports</span>}
@@ -9963,7 +10177,67 @@ useEffect(() => {
       <button className="btn blue" onClick={exportLeaveBalance}>  Export Leave Balance</button>
     </div>
   </section>
-)}
+    )}
+
+    {isAdmin && activeSidebar === "admin-leave-anniversary" && (
+        <section className="card">
+          <h2>Annual Leave Anniversary</h2>
+
+          <p>
+            Annual Leave: add 10 days when DOE anniversary is reached.
+            Carry is max 10 days and total Annual allowance cannot exceed 20 days.
+            Casual Leave resets to 6 days and cannot carry.
+          </p>
+
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Department</th>
+                <th>DOE</th>
+                <th>This Year Anniversary</th>
+                <th>Status</th>
+                <th>Annual Allowance</th>
+                <th>Annual Taken</th>
+                <th>Annual Balance</th>
+                <th>Casual Allowance</th>
+                <th>Casual Taken</th>
+                <th>Casual Balance</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {getAnnualLeaveAnniversaryRows().map((r) => (
+                <tr key={r.uid}>
+                  <td>{r.eid}</td>
+                  <td>{r.name}</td>
+                  <td>{r.department}</td>
+                  <td>{r.doe || "-"}</td>
+                  <td>{r.anniversaryDate || "-"}</td>
+                  <td>{r.reached ? "Reached" : "Waiting"}</td>
+                  <td>{r.annualTotal}</td>
+                  <td>{r.annualTaken}</td>
+                  <td>{r.annualBalance}</td>
+                  <td>6</td>
+                  <td>{Math.min(r.casualTaken, 6)}</td>
+                  <td>{r.casualBalance}</td>
+                  <td>
+                    <button
+                      className="btn small blue"
+                      disabled={!r.reached}
+                      onClick={() => autoAdjustOneStaffAnnualLeave(r.uid)}
+                    >
+                      Auto Add
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
 
     </main>
     </div>
