@@ -4633,12 +4633,12 @@ const leaderUpdateAttendanceTime = async () => {
           const updatedBalances = {
         ...currentBalances,
 
-        "Annual Leave": {
+         "Annual Leave": {
           ...currentAnnual,
           base: newAnnualBase,
           carry: newAnnualCarry,
           taken: newAnnualTaken,
-          total: newAnnualTotal,
+          total: Math.min(newAnnualBase + newAnnualCarry, 20),
         },
 
         "Casual Leave": {
@@ -5146,45 +5146,75 @@ const selectedDayIsAbsentFull =
 
   /* ---------------- leave & overtime (staff) ---------------- */
   const getLeaveAllowanceTakenBalance = (uid, type) => {
-    const balances = leaveBalances?.[uid]?.balances || {};
+  const balances = leaveBalances?.[uid]?.balances || {};
+  const b = balances[type] || {};
 
-    const b = balances[type] || {};
-    const annual = balances["Annual Leave"] || {};
-    const casual = balances["Casual Leave"] || {};
+  const base = Number(b.base || 0);
+  const storedCarry = Number(b.carry || 0);
+  const takenRaw = Number(b.taken || 0);
 
-    const base = Number(b.base || 0);
-    const carry = type === "Annual Leave" ? Number(b.carry || 0) : 0;
-    const total = Number(b.total ?? base + carry);
+  let allowance = 0;
+  let taken = takenRaw;
+  let balance = 0;
+  let carry = 0;
 
-    let allowance = total || base + carry;
-    let takenRaw = Number(b.taken || 0);
+  // Annual Leave:
+  // Always calculate from base + carry.
+  // Do not trust old/stale "total" field.
+  if (type === "Annual Leave") {
+    carry = Math.min(Math.max(0, storedCarry), 10);
+    allowance = Math.min(base + carry, 20);
+    taken = Math.max(0, takenRaw);
+    balance = Math.max(0, allowance - taken);
 
-    // ✅ Casual overflow moves to Annual display
-    const casualBase = Number(casual.base || casual.total || 6);
-    const casualTakenRaw = Number(casual.taken || 0);
-    const casualOverflow = Math.max(0, casualTakenRaw - casualBase);
+    return {
+      base,
+      carry,
+      allowance,
+      taken,
+      balance,
+      takenRaw,
+    };
+  }
 
-    if (type === "Casual Leave") {
-      allowance = casualBase;
-      takenRaw = Math.min(casualTakenRaw, casualBase);
+  // Casual Leave:
+  // Maximum allowance is 6 and no carry.
+  if (type === "Casual Leave") {
+    allowance = Number(base || 6);
+    allowance = Math.min(Math.max(0, allowance), 6);
 
-      return {
-        allowance,
-        taken: takenRaw,
-        balance: Math.max(0, allowance - takenRaw),
-        takenRaw: casualTakenRaw,
-      };
-    }
+    taken = Math.min(
+      Math.max(0, takenRaw),
+      allowance
+    );
 
-    if (type === "Annual Leave") {
-      takenRaw = Number(annual.taken || 0) + casualOverflow;
-    }
+    balance = Math.max(0, allowance - taken);
 
-    const taken = takenRaw;
-    const balance = Math.max(0, allowance - taken);
+    return {
+      base: allowance,
+      carry: 0,
+      allowance,
+      taken,
+      balance,
+      takenRaw,
+    };
+  }
 
-    return { allowance, taken, balance, takenRaw };
+  // Other leave types:
+  // No carry.
+  allowance = Math.max(0, base);
+  taken = Math.max(0, takenRaw);
+  balance = Math.max(0, allowance - taken);
+
+  return {
+    base,
+    carry: 0,
+    allowance,
+    taken,
+    balance,
+    takenRaw,
   };
+};
   
     const isCasualLeaveUsedAll = (uid) => {
       const { balance } = getLeaveAllowanceTakenBalance(uid, "Casual Leave");
