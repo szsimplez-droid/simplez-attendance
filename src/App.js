@@ -4552,95 +4552,103 @@ const leaderUpdateAttendanceTime = async () => {
         const currentCasual =
           currentBalances["Casual Leave"] || {};
   
-        const previousAnnual =
-          previousBalances["Annual Leave"] || {};
-  
-        // ------------------------------------------
-        // Previous year remaining annual leave
-        // ------------------------------------------
-  
-        const previousAnnualBase = Number(
-          previousAnnual.base || 0
-        );
-  
-        const previousAnnualCarry = Number(
-          previousAnnual.carry || 0
-        );
-  
-        const previousAnnualTaken = Number(
-          previousAnnual.taken || 0
-        );
-  
-        const previousAnnualAllowance = Math.min(
-          previousAnnualBase + previousAnnualCarry,
-          20
-        );
-  
-        const previousAnnualRemaining = Math.max(
-          0,
-          previousAnnualAllowance - previousAnnualTaken
-        );
-  
-        // Carry maximum 10 days for one year
-        const newAnnualCarry = Math.min(
-          previousAnnualRemaining,
-          10
-        );
-  
-        // New yearly annual base
-        const newAnnualBase = 10;
-  
-        // Total allowance cannot exceed 20
-        const newAnnualTotal = Math.min(
-          newAnnualBase + newAnnualCarry,
-          20
-        );
-  
-        // Keep current year's taken value
-        const currentAnnualTaken = Number(
-          currentAnnual.taken || 0
-        );
-  
-        // Casual Leave overflow handling
-        const rawCasualTaken = Number(
-          currentCasual.taken || 0
-        );
-  
-        const casualOverflow = Math.max(
-          0,
-          rawCasualTaken - 6
-        );
-  
-        // Casual max 6, overflow moves to annual taken
-        const newCasualTaken = Math.min(
-          rawCasualTaken,
-          6
-        );
-  
-        const newAnnualTaken =
-          currentAnnualTaken + casualOverflow;
-  
-        const updatedBalances = {
-          ...currentBalances,
-  
-          "Annual Leave": {
-            ...currentAnnual,
-  
-            base: newAnnualBase,
-            carry: newAnnualCarry,
-            taken: newAnnualTaken,
-            total: newAnnualTotal,
-          },
-  
-          "Casual Leave": {
-            ...currentCasual,
-  
-            base: 6,
-            carry: 0,
-            taken: newCasualTaken,
-            total: 6,
-          },
-        };
+             const previousAnnual =
+        previousBalances["Annual Leave"] || {};
+
+      // Current year existing Annual Leave data
+      const currentAnnualCarry = Number(
+        currentAnnual.carry || 0
+      );
+
+      // Previous year Annual Leave data
+      const previousAnnualBase = Number(
+        previousAnnual.base || 0
+      );
+
+      const previousAnnualCarry = Number(
+        previousAnnual.carry || 0
+      );
+
+      const previousAnnualTaken = Number(
+        previousAnnual.taken || 0
+      );
+
+      const previousAnnualAllowance = Math.min(
+        previousAnnualBase + previousAnnualCarry,
+        20
+      );
+
+      const previousAnnualRemaining = Math.max(
+        0,
+        previousAnnualAllowance - previousAnnualTaken
+      );
+
+      // Keep current carry when it already exists.
+      // Otherwise calculate from previous year.
+      const calculatedCarryFromPreviousYear = Math.min(
+        previousAnnualRemaining,
+        10
+      );
+
+      const newAnnualCarry = Math.min(
+        currentAnnualCarry > 0
+          ? currentAnnualCarry
+          : calculatedCarryFromPreviousYear,
+        10
+      );
+
+            const newAnnualBase = 10;
+
+      const newAnnualTotal = Math.min(
+        newAnnualBase + newAnnualCarry,
+        20
+      );
+
+      const currentAnnualTaken = Number(
+        currentAnnual.taken || 0
+      );
+
+      const rawCasualTaken = Number(
+        currentCasual.taken || 0
+      );
+
+      const casualOverflow = Math.max(
+        0,
+        rawCasualTaken - 6
+      );
+
+      const newCasualTaken = Math.min(
+        rawCasualTaken,
+        6
+      );
+
+      const newAnnualTaken =
+        currentAnnualTaken + casualOverflow;
+
+      const newAnnualBalance = Math.max(
+        0,
+        newAnnualTotal - newAnnualTaken
+      );
+
+          const updatedBalances = {
+        ...currentBalances,
+
+        "Annual Leave": {
+          ...currentAnnual,
+          base: newAnnualBase,
+          carry: newAnnualCarry,
+          taken: newAnnualTaken,
+          total: newAnnualTotal,
+        },
+
+        "Casual Leave": {
+          ...currentCasual,
+          base: 6,
+          carry: 0,
+          taken: newCasualTaken,
+          total: 6,
+        },
+      };
   
         batch.set(
           currentBalanceRef,
