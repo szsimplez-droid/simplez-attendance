@@ -8343,11 +8343,18 @@ useEffect(() => {
         />
 
         <label style={{ fontSize: 14 }}>Department</label>
-        <input
-          placeholder="Department"
+        <select
           value={employeeForm.department}
           onChange={(e) => setEmployeeForm({ ...employeeForm, department: e.target.value })}
-        />
+        >
+          <option value="">Choose Department</option>
+          <option value="Sale">Sale</option>
+          <option value="Web">Web</option>
+          <option value="Register">Register</option>
+          <option value="Kaientai">Kaientai</option>
+          <option value="Management">Management</option>
+          <option value="BPO">BPO</option>
+        </select>
 
         <label style={{ fontSize: 14 }}>Designation</label>
         <input
