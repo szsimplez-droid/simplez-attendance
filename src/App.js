@@ -2470,6 +2470,7 @@ useEffect(() => {
   body: [
   [ "Basic Salary (Latest)", p.basicLatest?.toLocaleString() || 0],
   [ "Job Title Allowance", p.jobAllowance?.toLocaleString() || 0],
+  [ "Director Allowance", p.directorAllowance?.toLocaleString() || 0],
   [ "Language Allowance (JLPT)", p.languageAllowance?.toLocaleString() || 0],
   [ "Fixed Overtime", p.fixedOvertime?.toLocaleString() || 0],
   [ "Work from Home", p.wfhAllowance?.toLocaleString() || 0],
