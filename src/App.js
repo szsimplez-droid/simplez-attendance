@@ -251,6 +251,18 @@ const [showRejectedOT, setShowRejectedOT] = useState(false);
   const [leaderOvertime, setLeaderOvertime] = useState([]);
   const [leaderAttendance, setLeaderAttendance] = useState([]);    // attendance records for leader's members
 
+  // Leader - member P/O
+  const [leaderPoReports, setLeaderPoReports] = useState([]);
+  const [leaderPoSearch, setLeaderPoSearch] = useState("");
+  const [leaderPoMonth, setLeaderPoMonth] = useState(getCurrentMonth());
+
+  // Leader member P/O edit
+  const [leaderEditingPo, setLeaderEditingPo] = useState(null);
+  const [leaderPoEditDate, setLeaderPoEditDate] = useState("");
+  const [leaderPoEditFrom, setLeaderPoEditFrom] = useState("");
+  const [leaderPoEditTo, setLeaderPoEditTo] = useState("");
+  const [leaderPoEditReason, setLeaderPoEditReason] = useState("");
+
   const [allPayroll, setAllPayroll] = useState([]);
   const [allPayslips, setAllPayslips] = useState([]);
   const [allPoReports, setAllPoReports] = useState([]);
@@ -1810,21 +1822,193 @@ const loadLeaderOvertime = async (memberIds) => {
   setLeaderOvertime(results);
 };
 
-/* const loadLeaderAttendance = async (memberIds) => {
-  if (!memberIds || memberIds.length === 0) {
-    setLeaderAttendance([]);
-    return;
+const loadLeaderPoReports = async (memberIds) => {
+  try {
+    if (!memberIds || memberIds.length === 0) {
+      setLeaderPoReports([]);
+      return;
+    }
+
+    let results = [];
+
+    for (const batchIds of chunk(memberIds, 10)) {
+      const q = query(
+        collection(db, "poReports"),
+        where("userId", "in", batchIds)
+      );
+
+      const snap = await getDocs(q);
+
+      results = results.concat(
+        snap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }))
+      );
+    }
+
+    results.sort(
+      (a, b) =>
+        new Date(b.date || b.createdAt || 0) -
+        new Date(a.date || a.createdAt || 0)
+    );
+
+    setLeaderPoReports(results);
+  } catch (err) {
+    console.error("loadLeaderPoReports:", err);
+    notify("❌ Member P/O reports cannot load: " + err.message);
   }
-  let results = [];
-  for (const batch of chunk(memberIds, 10)) {
-    const q = query(collection(db, "attendance"), where("userId", "in", batch));
-    const snap = await getDocs(q);
-    results = results.concat(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+};
+
+useEffect(() => {
+  if (!user || !isLeader || activeSidebar !== "member-po-panel") return;
+
+  (async () => {
+    await ensureUsersLoaded();
+
+    const ids = await loadLeaderMembers(user.uid);
+
+    await loadLeaderPoReports(ids);
+  })();
+}, [user, isLeader, activeSidebar]);
+
+const leaderUpdatePoStatus = async (po, status) => {
+  try {
+    if (!po?.id) return;
+
+    // security check on UI side
+    if (!leaderMembers.includes(po.userId)) {
+      return notify("❌ You can manage only your team members.");
+    }
+
+    if (po.status !== "pending") {
+      return notify("Only pending P/O reports can be approved or rejected.");
+    }
+
+    await updateDoc(doc(db, "poReports", po.id), {
+      status,
+      actionBy: user.uid,
+      actionAt: new Date().toISOString(),
+      actionRole: "leader",
+    });
+
+    // immediate UI change
+    setLeaderPoReports((prev) =>
+      prev.map((x) =>
+        x.id === po.id
+          ? {
+              ...x,
+              status,
+              actionBy: user.uid,
+              actionAt: new Date().toISOString(),
+            }
+          : x
+      )
+    );
+
+    notify(`✅ P/O ${status}`);
+
+    await loadLeaderPoReports(leaderMembers);
+  } catch (err) {
+    console.error(err);
+    notify("❌ P/O status update failed: " + err.message);
+  }
+};
+
+const openLeaderEditPo = (po) => {
+  if (!leaderMembers.includes(po.userId)) {
+    return notify("❌ You can edit only your team members.");
   }
 
-  results.sort((a, b) => new Date(b.date) - new Date(a.date));
-  setLeaderAttendance(results);
-}; */
+  if (po.status !== "pending") {
+    return notify("Only pending P/O reports can be edited.");
+  }
+
+  setLeaderEditingPo(po);
+  setLeaderPoEditDate(po.date || "");
+  setLeaderPoEditFrom(po.fromTime || "");
+  setLeaderPoEditTo(po.toTime || "");
+  setLeaderPoEditReason(po.POreason || "");
+};
+
+const saveLeaderPoEdit = async () => {
+  try {
+    if (!leaderEditingPo) return;
+
+    if (!leaderMembers.includes(leaderEditingPo.userId)) {
+      return notify("❌ You can edit only your team members.");
+    }
+
+    if (leaderEditingPo.status !== "pending") {
+      return notify("Only pending P/O reports can be edited.");
+    }
+
+    if (
+      !leaderPoEditDate ||
+      !leaderPoEditFrom ||
+      !leaderPoEditTo ||
+      !leaderPoEditReason
+    ) {
+      return notify("Please fill all P/O fields.");
+    }
+
+    const totalTimeByHour = calcPoDuration(
+      leaderPoEditFrom,
+      leaderPoEditTo
+    );
+
+    if (totalTimeByHour === "Invalid") {
+      return notify("Invalid time range.");
+    }
+
+    const updatedValues = {
+      date: leaderPoEditDate,
+      fromTime: leaderPoEditFrom,
+      toTime: leaderPoEditTo,
+      POreason: leaderPoEditReason,
+      totalTimeByHour,
+
+      editedBy: user.uid,
+      editedByRole: "leader",
+      updatedAt: new Date().toISOString(),
+    };
+
+    await updateDoc(
+      doc(db, "poReports", leaderEditingPo.id),
+      updatedValues
+    );
+
+    // immediate UI update
+    setLeaderPoReports((prev) =>
+      prev.map((x) =>
+        x.id === leaderEditingPo.id
+          ? { ...x, ...updatedValues }
+          : x
+      )
+    );
+
+    notify("✅ Member P/O updated");
+
+    setLeaderEditingPo(null);
+    setLeaderPoEditDate("");
+    setLeaderPoEditFrom("");
+    setLeaderPoEditTo("");
+    setLeaderPoEditReason("");
+
+    await loadLeaderPoReports(leaderMembers);
+  } catch (err) {
+    console.error(err);
+    notify("❌ Member P/O update failed: " + err.message);
+  }
+};
+
+const cancelLeaderPoEdit = () => {
+  setLeaderEditingPo(null);
+  setLeaderPoEditDate("");
+  setLeaderPoEditFrom("");
+  setLeaderPoEditTo("");
+  setLeaderPoEditReason("");
+};
 
 const loadLeaderAttendance = async (
   memberIds,
@@ -4121,6 +4305,29 @@ const filteredMemberOT = leaderOvertime.filter(row => {
 
   return matchName && matchMonth;
 });
+
+const filteredMemberPoReports = leaderPoReports.filter((po) => {
+  const u = usersMap?.[po.userId] || {};
+
+  const q = leaderPoSearch.trim().toLowerCase();
+
+  const matchSearch =
+    !q ||
+    String(u.eid || "").toLowerCase().includes(q) ||
+    String(u.name || "").toLowerCase().includes(q) ||
+    String(u.email || "").toLowerCase().includes(q);
+
+  const matchMonth =
+    !leaderPoMonth ||
+    String(po.date || "").startsWith(leaderPoMonth);
+
+  return matchSearch && matchMonth;
+});
+
+const pagedMemberPo = paginate(
+  filteredMemberPoReports,
+  "member-po"
+);
 
 const filteredAllMemberLeaves = allLeaves.filter((row) => {
   if (!shouldShowRecordForUser(row.userId, row.startDate)) return false;
@@ -6654,6 +6861,9 @@ useEffect(() => {
             <a className="nav-item" href="?tab=member-ot-panel" onClick={(e) => handleTabClick(e, "member-ot-panel")}>
               <span className="icon">👥</span>{!desktopSidebarCollapsed && <span className="nav-text">Members OT Requests</span>}
             </a>
+            <a className="nav-item" href="?tab=member-po-panel" onClick={(e) => handleTabClick(e, "member-po-panel")}>
+              <span className="icon">👥</span>{!desktopSidebarCollapsed && <span className="nav-text">Member P/O Reports</span>}
+            </a>
            
           </div>
         )}
@@ -8192,7 +8402,263 @@ useEffect(() => {
   </section>
 )}
 
+{isLeader && activeSidebar === "member-po-panel" && (
+  <section className="card">
+    <div className="section admin">
 
+      <h2>My Members P/O Reports</h2>
+
+      <div className="filters mem_po_table">
+                
+          <input
+            type="text"
+            placeholder="Search by name"
+            value={leaderPoSearch}
+            onChange={(e) => {
+              setLeaderPoSearch(e.target.value);
+              setPage("member-po", 1);
+            }}
+          />
+                 
+          <input
+            type="month"
+            value={leaderPoMonth}
+            onChange={(e) => {
+              setLeaderPoMonth(e.target.value);
+              setPage("member-po", 1);
+            }}
+          />
+       
+        <button
+          className="btn"
+          onClick={() => {
+            setLeaderPoSearch("");
+            setLeaderPoMonth(getCurrentMonth());
+            setPage("member-po", 1);
+          }}
+          >
+          Reset
+        </button>
+      </div>
+
+      {/* =========================
+          LEADER EDIT FORM
+      ========================== */}
+      {leaderEditingPo && (
+        <div
+          className="card"
+          style={{
+            marginTop: 20,
+            padding: 18,
+          }}
+        >
+          <h3>
+            Edit Member P/O -{" "}
+            {usersMap?.[leaderEditingPo.userId]?.eid || ""}{" "}
+            {displayUser(leaderEditingPo.userId)}
+          </h3>
+
+          <div
+            style={{
+              display: "flex",
+              gap: 12,
+              flexWrap: "wrap",
+              alignItems: "end",
+            }}
+          >
+            <div>
+              <label>Date</label>
+              <input
+                type="date"
+                value={leaderPoEditDate}
+                onChange={(e) =>
+                  setLeaderPoEditDate(e.target.value)
+                }
+              />
+            </div>
+
+            <div>
+              <label>From</label>
+              <input
+                type="time"
+                value={leaderPoEditFrom}
+                onChange={(e) =>
+                  setLeaderPoEditFrom(e.target.value)
+                }
+              />
+            </div>
+
+            <div>
+              <label>To</label>
+              <input
+                type="time"
+                value={leaderPoEditTo}
+                onChange={(e) =>
+                  setLeaderPoEditTo(e.target.value)
+                }
+              />
+            </div>
+
+            <div>
+              <label>Reason</label>
+              <input
+                type="text"
+                value={leaderPoEditReason}
+                onChange={(e) =>
+                  setLeaderPoEditReason(e.target.value)
+                }
+              />
+            </div>
+
+            <button
+              className="btn blue"
+              onClick={saveLeaderPoEdit}
+            >
+              💾 Save
+            </button>
+
+            <button
+              className="btn"
+              onClick={cancelLeaderPoEdit}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      <table
+        className="data-table"
+        style={{ marginTop: 20 }}
+      >
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Date</th>
+            <th>From</th>
+            <th>To</th>
+            <th>Total</th>
+            <th>Reason</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {filteredMemberPoReports.length === 0 ? (
+            <tr>
+              <td
+                colSpan="9"
+                style={{
+                  textAlign: "center",
+                  padding: 20,
+                }}
+              >
+                No P/O reports found.
+              </td>
+            </tr>
+          ) : (
+            pagedMemberPo.rows.map((po) => {
+              const pending =
+                String(po.status || "pending").toLowerCase() ===
+                "pending";
+
+              return (
+                <tr key={po.id}>
+                 {/*  <td>
+                    {usersMap?.[po.userId]?.eid || "-"}
+                  </td> */}
+
+                  <td>{displayUser(po.userId)}</td>
+
+                  <td>{po.date || "-"}</td>
+
+                  <td>{po.fromTime || "-"}</td>
+
+                  <td>{po.toTime || "-"}</td>
+
+                  <td>{po.totalTimeByHour || "-"}</td>
+
+                  <td>{po.POreason || "-"}</td>
+
+                  <td>{colorStatus(po.status)}</td>
+
+                  <td>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 5,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <button
+                        className="btn small"
+                        disabled={!pending}
+                        onClick={() => openLeaderEditPo(po)}
+                        style={{
+                          opacity: pending ? 1 : 0.5,
+                          cursor: pending
+                            ? "pointer"
+                            : "not-allowed",
+                        }}
+                      >
+                        ✏ Edit
+                      </button>
+
+                      <button
+                        className="btn small"
+                        disabled={!pending}
+                        onClick={() =>
+                          leaderUpdatePoStatus(
+                            po,
+                            "approved"
+                          )
+                        }
+                        style={{
+                          opacity: pending ? 1 : 0.5,
+                          cursor: pending
+                            ? "pointer"
+                            : "not-allowed",
+                        }}
+                      >
+                        ✅
+                      </button>
+
+                      <button
+                        className="btn small red"
+                        disabled={!pending}
+                        onClick={() =>
+                          leaderUpdatePoStatus(
+                            po,
+                            "rejected"
+                          )
+                        }
+                        style={{
+                          opacity: pending ? 1 : 0.5,
+                          cursor: pending
+                            ? "pointer"
+                            : "not-allowed",
+                        }}
+                      >
+                        ❌
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })
+          )}
+        </tbody>
+      </table>
+
+      <Pagination
+        list={filteredMemberPoReports}
+        pageKey="member-po"
+      />
+
+    </div>
+  </section>
+)}   
     
            
     {/* Admin Employee Management */}

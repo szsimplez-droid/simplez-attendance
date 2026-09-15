@@ -364,11 +364,16 @@ background: transparent;
   align-items: center;
 }
 
-.mem_att_table,.mem_ot_table,.mem_leave_table {
+.mem_att_table,.mem_ot_table,.mem_leave_table,.mem_po_table {
   display: flex;
   justify-content: space-between;
   align-items: self-start; 
   margin-bottom: 12px;
+  width: 50%;
+}
+
+.mem_leave_table {
+  width: 100%;
 }
 
 .myatt_table,.myleave_table,.myot_table,.mypo_table {
@@ -381,7 +386,7 @@ background: transparent;
   margin-right: 10px;
 }
 
-.mem_att_table input,.mem_ot_table input {
+.mem_att_table input,.mem_ot_table input,.mem_po_table input {
   width: 60%;
 }
 
