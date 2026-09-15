@@ -390,7 +390,7 @@ background: transparent;
   width: 60%;
 }
 
-.mem_att_table input[type="month"],.mem_ot_table input[type="month"]  {
+.mem_att_table input[type="month"],.mem_ot_table input[type="month"],.mem_po_table input[type="month"]   {
   width: 20%;
 }
 
