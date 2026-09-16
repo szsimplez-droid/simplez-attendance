@@ -3597,9 +3597,24 @@ const checkLocationRange = async () => {
     loadAllAttendance(attendanceMonth);
 
   } catch (err) {
-    console.error(err);
+  console.error("Clock In error:", err);
+
+  const msg = String(err?.message || "").toLowerCase();
+  const code = String(err?.code || "").toLowerCase();
+
+  if (
+    !navigator.onLine ||
+    code.includes("unavailable") ||
+    msg.includes("offline") ||
+    msg.includes("network")
+  ) {
+    notify(
+      "❌ Internet connection is unavailable. Please reconnect and try Clock In again."
+    );
+  } else {
     notify("❌ Clock In failed: " + err.message);
   }
+}
 
   setClockLoading(false);
 };
